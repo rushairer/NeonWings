@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#05070f">
+<title>Neon Wings v22.3</title>
+<style>
+html,body{margin:0;height:100%;background:#05070f;color:#e7fbff;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;overflow:hidden}.box{max-width:720px;padding:28px;text-align:center}h1{letter-spacing:.08em;margin:0 0 14px;font-size:clamp(34px,8vw,72px);text-shadow:0 0 18px #38e8ff}p{opacity:.78;line-height:1.6}.bar{width:min(520px,80vw);height:10px;margin:24px auto;border:1px solid rgba(142,247,255,.5);background:rgba(255,255,255,.06)}.fill{height:100%;width:0;background:#8ef7ff;box-shadow:0 0 20px #8ef7ff;transition:width .15s ease}code{color:#fff4b7}
+</style>
+</head>
+<body>
+<div class="box"><h1>NEON WINGS</h1><p>Loading v22.3...</p><div class="bar"><div class="fill" id="fill"></div></div><p><small>Press Start / Enter after loading to enable audio.</small></p></div>
+<script>
+(async()=>{const chunkCount=16,fill=document.getElementById('fill');let b64='';for(let i=0;i<chunkCount;i++){const name=String(i).padStart(2,'0')+'.txt';const res=await fetch('./game/chunks/'+name,{cache:'no-store'});if(!res.ok)throw new Error('Missing game data chunk '+name);b64+=await res.text();fill.style.width=Math.round((i+1)/chunkCount*100)+'%';}const bin=Uint8Array.from(atob(b64.trim()),c=>c.charCodeAt(0));if(!('DecompressionStream' in window)){document.body.innerHTML='<div class="box"><h1>NEON WINGS</h1><p>This browser does not support <code>DecompressionStream</code>. Please use current Chrome/Chromium.</p></div>';return;}const stream=new Blob([bin]).stream().pipeThrough(new DecompressionStream('gzip'));const gameHtml=await new Response(stream).text();document.open();document.write(gameHtml);document.close();})().catch(err=>{document.body.innerHTML='<div class="box"><h1>NEON WINGS</h1><p>Failed to load game: '+String(err).replace(/[<>&]/g,'')+'</p></div>';})
+</script>
+</body>
+</html>
