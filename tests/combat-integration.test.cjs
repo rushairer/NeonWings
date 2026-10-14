@@ -6,6 +6,7 @@ const vm = require("node:vm");
 const platform = require("../src/platform.js");
 const controller = require("../src/controller.js");
 const combat = require("../src/combat.js");
+const collision = require("../src/collision.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -25,7 +26,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -178,4 +179,65 @@ test("title, active gameplay, paused controller options and game over render wit
   app.eval('game.state = "PLAYING"; game.combat.energy = 100; activateOverdrive(); drawFrame(0.016)');
   app.eval('game.state = "PAUSED"; pauseMenu.page = "controls"; drawFrame(0.016)');
   app.eval('game.state = "GAME_OVER"; drawFrame(0.016)');
+});
+
+test("fast blue shot crosses a target between frame endpoints without tunneling", () => {
+  const app = boot();
+  app.eval(`game.state = "PLAYING";
+    game.enemies = [{kind:"scout", x:350, y:500, r:10, hp:3, maxHp:3,
+      score:30, color:"#f88", core:"#fff"}];
+    game.bullets = [{x:250, y:500, vx:1200, vy:0, r:8, power:1, c:"#0ff"}];
+    updatePlayerBullets(0.16)`);
+  assert.ok(app.eval("game.enemies[0].hp") < 3);
+  assert.equal(app.eval("game.bullets.length"), 0);
+});
+
+test("fast enemy bullet crossing the ship causes damage even when both endpoints are safe", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING";
+    game.player.x=100; game.player.y=100;
+    game.enemyBullets=[{x:0,y:100,vx:600,vy:0,r:8,life:2}];
+    updateEnemyBullets(0.32)`);
+  assert.equal(app.eval("game.hp"), 2);
+  assert.equal(app.eval("game.combat.grazes"), 0);
+});
+
+test("simultaneous lethal hit overrides near-miss graze regardless of bullet list order", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING";
+    game.player.x=100; game.player.y=100;
+    game.enemyBullets=[
+      {x:100,y:150,vx:0,vy:0,r:8,life:2},
+      {x:100,y:115,vx:0,vy:0,r:8,life:2}
+    ];
+    updateEnemyBullets(0)`);
+  assert.equal(app.eval("game.hp"), 2);
+  assert.equal(app.eval("game.combat.grazes"), 0);
+  assert.equal(app.eval("game.combat.energy"), 0);
+});
+
+test("large particle and bullet volleys have strict bounded memory budgets", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING";
+    for(let i=0; i<1500; i++) addParticle(100,100,0,0,1,"#fff");
+    for(let i=0; i<500; i++) addPlayerShot(100,100,100,0);
+    for(let i=0; i<520; i++) aimAtPlayer(600,500,300,8,"#f00","#fff");
+    for(let i=0; i<120; i++) addMissile(100,100,1,2)`);
+  assert.equal(app.eval("game.particles.length"), 800);
+  assert.equal(app.eval("game.bullets.length"), 240);
+  assert.equal(app.eval("game.enemyBullets.length"), 340);
+  assert.equal(app.eval("game.missiles.length"), 48);
+});
+
+test("F3 debug HUD toggles without affecting gameplay or overriding held keys", () => {
+  const app = boot();
+  app.eval('game.state="PLAYING"');
+  assert.equal(app.eval("performanceOverlay"), false);
+  app.events.get("keydown")({ code:"F3", repeat:false, preventDefault() {} });
+  assert.equal(app.eval("performanceOverlay"), true);
+  app.eval("drawFrame(0.016)");
+  app.events.get("keydown")({ code:"F3", repeat:true, preventDefault() {} });
+  assert.equal(app.eval("performanceOverlay"), true);
+  app.events.get("keydown")({ code:"F3", repeat:false, preventDefault() {} });
+  assert.equal(app.eval("performanceOverlay"), false);
 });

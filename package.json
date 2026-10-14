@@ -1,10 +1,10 @@
 {
   "name": "neonwings",
-  "version": "24.0.0",
+  "version": "24.1.0",
   "private": true,
   "description": "Handheld-first static Canvas arcade shooter",
   "scripts": {
-    "check": "node --check src/platform.js && node --check src/controller.js && node --check src/combat.js && node --check src/game.js && node --check scripts/build.mjs",
+    "check": "node --check src/platform.js && node --check src/controller.js && node --check src/combat.js && node --check src/collision.js && node --check src/game.js && node --check scripts/build.mjs",
     "test": "node --test",
     "build": "node scripts/build.mjs"
   },

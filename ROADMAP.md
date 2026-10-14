@@ -22,6 +22,7 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Blue piercing lance, purple wide spread with close-range damage, yellow multi-target missile volley
 - [x] Distinct fighter traits: Falcon graze/speed bonus; Vanguard kill-charge/damage/one-hit guard
 - [x] Fix Bomb wave completion and count Bomb kills accurately without combo/charge farming
+- [x] v24.1: swept projectile collision, hit-before-graze resolution, bounded FX/bullets, F3 frame diagnostics
 - [ ] First-stage balance review and 60 FPS profiling on AYANEO AIR MINI
 - [ ] Visual QA for crowded HUD/bullets and sustained Overdrive effects in Chromium/Android
 - [ ] Optional telegraph/accessibility tuning after playtesting

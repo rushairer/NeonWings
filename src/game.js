@@ -6,10 +6,18 @@ const W = 1280;
     if (!controller) throw new Error("NeonWings controller runtime missing");
     const combatRules = window.NeonCombat;
     if (!combatRules) throw new Error("NeonWings combat runtime missing");
+    const collision = window.NeonCollision;
+    if (!collision) throw new Error("NeonWings collision runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
     const HIGH_SCORE_KEY = "neon_wings_ayaneo_high_score_v11";
+    const LIMITS = Object.freeze({
+      particles: 800,
+      enemyBullets: 340,
+      playerBullets: 240,
+      missiles: 48
+    });
 
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
     const rand = (min, max) => min + Math.random() * (max - min);
@@ -906,6 +914,7 @@ const W = 1280;
         fpsTick: performance.now(),
         frames: 0,
         fps: 60,
+        slowFrames: 0,
 
         score: 0,
         highScore: highScore(),
@@ -967,6 +976,7 @@ const W = 1280;
 
     let game = newGame();
     game.state = "TITLE";
+    let performanceOverlay = false;
 
     // Keep the original 4:3 playfield; letterbox instead of stretching on wide screens.
     function layoutCanvas() {
@@ -1410,6 +1420,7 @@ const W = 1280;
     }
 
     function aimAtPlayer(fromX, fromY, speed, r, color, glow, spread = 0) {
+      if (game.enemyBullets.length >= LIMITS.enemyBullets) return;
       const dx = game.player.x - fromX;
       const dy = game.player.y - fromY;
       const base = Math.atan2(dy, dx) + spread;
@@ -1703,6 +1714,7 @@ const W = 1280;
     }
 
     function addParticle(x, y, vx, vy, life, c) {
+      if (game.particles.length >= LIMITS.particles) return;
       game.particles.push({ x, y, vx, vy, life, c });
     }
 
@@ -1727,6 +1739,7 @@ const W = 1280;
     }
 
     function addPlayerShot(x, y, vx, vy, r = 8, power = 1, c = "#5ae8ff", extra = {}) {
+      if (game.bullets.length >= LIMITS.playerBullets) return;
       game.bullets.push({
         x, y, vx, vy, r,
         power: power * combatRules.weaponDamageScale(game.combat, selectedShip().id),
@@ -1735,6 +1748,7 @@ const W = 1280;
     }
 
     function addMissile(x, y, vySign = 1, power = 2) {
+      if (game.missiles.length >= LIMITS.missiles) return;
       sfx("missile");
       haptic("missile", 0.10, 0.12, 24, 0.12);
       const overdrive = combatRules.isActive(game.combat);
@@ -1912,6 +1926,7 @@ const W = 1280;
     }
 
     function fireBossBullet(x, y, angle, speed, r, c, glow) {
+      if (game.enemyBullets.length >= LIMITS.enemyBullets) return;
       game.enemyBullets.push({
         x, y,
         vx: Math.cos(angle) * speed,
@@ -2165,6 +2180,7 @@ const W = 1280;
 
     function updateMissiles(dt) {
       for (const m of game.missiles) {
+        const fromX = m.x, fromY = m.y;
         const target = findMissileTarget(m);
         const speed = Math.hypot(m.vx, m.vy) || 520;
 
@@ -2193,7 +2209,7 @@ const W = 1280;
 
         for (const e of game.enemies) {
           if (e.hp <= 0) continue;
-          if (dist(m.x, m.y, e.x, e.y) < m.r + e.r) {
+          if (collision.sweptCircleHit(fromX, fromY, m.x, m.y, e.x, e.y, m.r + e.r)) {
             m.life = 0;
             damageEnemy(e, m.power, m.x, m.y, "#ffd76b");
             break;
@@ -2201,7 +2217,10 @@ const W = 1280;
         }
 
         const b = game.boss;
-        if (m.life > 0 && b && b.active && Math.abs(m.x - b.x) < b.rx + m.r && Math.abs(m.y - b.y) < b.ry + m.r) {
+        if (m.life > 0 && b && b.active && collision.sweptAabbHit(
+          fromX, fromY, m.x, m.y,
+          b.x - b.rx - m.r, b.x + b.rx + m.r, b.y - b.ry - m.r, b.y + b.ry + m.r
+        )) {
           m.life = 0;
           damageBoss(m.power, m.x, m.y, "#ffd76b");
         }
@@ -2212,6 +2231,8 @@ const W = 1280;
 
     function updatePlayerBullets(dt) {
       for (const b of game.bullets) {
+        b.previousX = b.x;
+        b.previousY = b.y;
         b.x += b.vx * dt;
         b.y += (b.vy || 0) * dt;
       }
@@ -2220,9 +2241,10 @@ const W = 1280;
         if (b.dead) continue;
 
         for (const e of game.enemies) {
-          if (e.hp <= 0) continue;
-          if (b.hitEnemies?.includes(e)) continue;
-          if (dist(b.x, b.y, e.x, e.y) >= b.r + e.r) continue;
+          if (e.hp <= 0 || b.hitEnemies?.includes(e)) continue;
+          if (!collision.sweptCircleHit(
+            b.previousX, b.previousY, b.x, b.y, e.x, e.y, b.r + e.r
+          )) continue;
 
           const close = e.x >= game.player.x && e.x - game.player.x <= 300;
           const damage = (b.power || 1) * (b.pointBlank && close ? 1.5 : 1);
@@ -2238,9 +2260,13 @@ const W = 1280;
         }
 
         const boss = game.boss;
-        if (!b.dead && boss && boss.active && Math.abs(b.x - boss.x) < boss.rx + b.r && Math.abs(b.y - boss.y) < boss.ry + b.r) {
+        if (!b.dead && boss && boss.active && collision.sweptAabbHit(
+          b.previousX, b.previousY, b.x, b.y,
+          boss.x - boss.rx - b.r, boss.x + boss.rx + b.r,
+          boss.y - boss.ry - b.r, boss.y + boss.ry + b.r
+        )) {
           const close = boss.x >= game.player.x && boss.x - game.player.x <= 300;
-          b.dead = true; // Even a piercing lance only hits the boss once.
+          b.dead = true; // Even a piercing lance only damages a boss once.
           damageBoss((b.power || 1) * (b.pointBlank && close ? 1.5 : 1), b.x, b.y, b.c);
         }
       }
@@ -2250,25 +2276,43 @@ const W = 1280;
 
     function updateEnemyBullets(dt) {
       for (const bullet of game.enemyBullets) {
+        bullet.previousX = bullet.x;
+        bullet.previousY = bullet.y;
         bullet.x += bullet.vx * dt;
         bullet.y += bullet.vy * dt;
         bullet.life -= dt;
       }
 
-      // Collisions always take precedence over grazing and no graze is earned while invulnerable.
+      // Resolve ALL potentially lethal contacts before awarding ANY graze energy.
+      // This prevents bullet iteration order from granting a bonus on a hit frame.
       if (game.invuln <= 0) {
+        const player = game.player;
+        const hitbox = selectedShip().hitbox;
+        let contact = null;
         for (const bullet of game.enemyBullets) {
           if (bullet.life <= 0) continue;
-          const hitRadius = bullet.r + selectedShip().hitbox;
-          if (dist(game.player.x, game.player.y, bullet.x, bullet.y) <= hitRadius) {
-            bullet.life = 0;
-            damagePlayer();
+          if (collision.sweptCircleHit(
+            bullet.previousX, bullet.previousY, bullet.x, bullet.y,
+            player.x, player.y, bullet.r + hitbox
+          )) {
+            contact = bullet;
             break;
           }
-          const graze = combatRules.registerGraze(
-            game.combat, bullet, game.player.x, game.player.y, selectedShip().hitbox, selectedShip().id
-          );
-          if (graze.grazed) {
+        }
+
+        if (contact) {
+          contact.life = 0;
+          damagePlayer();
+        } else {
+          for (const bullet of game.enemyBullets) {
+            if (bullet.life <= 0 || bullet.grazed) continue;
+            const nearDistance = Math.sqrt(collision.segmentPointDistanceSq(
+              bullet.previousX, bullet.previousY, bullet.x, bullet.y, player.x, player.y
+            ));
+            const graze = combatRules.registerGraze(
+              game.combat, bullet, player.x, player.y, hitbox, selectedShip().id, nearDistance
+            );
+            if (!graze.grazed) continue;
             sfx("graze");
             if (game.combat.grazes % 4 === 0) haptic("graze", 0.12, 0.07, 25, 0.14);
             for (let i = 0; i < 5; i++) addParticle(
@@ -2278,6 +2322,7 @@ const W = 1280;
           }
         }
       }
+
       game.enemyBullets = game.enemyBullets.filter(b => b.life > 0 && b.x > -60 && b.x < W + 80 && b.y > -80 && b.y < H + 80);
     }
 
@@ -2802,6 +2847,21 @@ const W = 1280;
       }
     }
 
+    function drawPerformanceOverlay() {
+      if (!performanceOverlay) return;
+      const x = 552, y = H - 117;
+      ctx.save();
+      ctx.fillStyle = "rgba(0,0,0,.74)";
+      ctx.fillRect(x, y, 378, 98);
+      ctx.strokeStyle = "rgba(142,247,255,.6)";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(x, y, 378, 98);
+      drawText(`FPS ${game.fps}   >25ms ${game.slowFrames}`, x + 14, y + 25, 19, "left", "#8ef7ff");
+      drawText(`FX ${game.particles.length}/${LIMITS.particles}  EB ${game.enemyBullets.length}/${LIMITS.enemyBullets}`, x + 14, y + 53, 18, "left");
+      drawText(`SHOTS ${game.bullets.length}  MISSILES ${game.missiles.length}`, x + 14, y + 81, 18, "left");
+      ctx.restore();
+    }
+
     function drawOverlay() {
       if (game.state !== "PAUSED") return;
 
@@ -2860,7 +2920,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v24.0", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v24.1", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -3020,12 +3080,15 @@ const W = 1280;
       drawPlayerShip(game.player.x, game.player.y, game.player.vx / selectedShip().speed, game.invuln > 0, selectedShip());
       drawHud();
       drawOverlay();
+      drawPerformanceOverlay();
 
       ctx.restore();
     }
 
     function loop(now) {
-      const dt = clamp((now - game.last) / 1000, 0, 0.033);
+      const frameTime = Math.max(0, now - game.last);
+      if (game.state === "PLAYING" && frameTime > 25) game.slowFrames += 1;
+      const dt = clamp(frameTime / 1000, 0, 0.033);
       game.last = now;
       game.frames += 1;
 
@@ -3063,6 +3126,11 @@ const W = 1280;
 
     window.addEventListener("keydown", (e) => {
       unlockAudio();
+      if (e.code === "F3") {
+        e.preventDefault();
+        if (!e.repeat) performanceOverlay = !performanceOverlay;
+        return;
+      }
 
       if (game.state === "GAME_OVER") {
         if (e.code === "Enter" || e.code === "NumpadEnter") {

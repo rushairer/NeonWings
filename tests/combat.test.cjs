@@ -109,3 +109,12 @@ test("damage multipliers are ship-dependent and only active in overdrive", () =>
   assert.equal(rules.weaponDamageScale(s, "vanguard"), 1.3);
   assert.equal(rules.weaponDamageScale(s, "falcon"), 1.12);
 });
+
+test("swept grazing distance catches fast near-misses once, never actual hits", () => {
+  const s = rules.createState();
+  const fast = { x: 500, y: 500, r: 8, life: 4 };
+  assert.equal(rules.registerGraze(s, fast, 100, 100, 24, "falcon", 45).grazed, true);
+  assert.equal(rules.registerGraze(s, fast, 100, 100, 24, "falcon", 45).grazed, false);
+  assert.equal(s.grazes, 1);
+  assert.equal(rules.registerGraze(s, {x: 500, y: 500, r: 8, life: 4}, 100, 100, 24, "falcon", 25).grazed, false);
+});

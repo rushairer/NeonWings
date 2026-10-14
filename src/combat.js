@@ -40,10 +40,10 @@
     return { points: Math.round(basePoints * multi), multiplier: multi, ready };
   }
 
-  function registerGraze(state, bullet, x, y, hitbox, shipId) {
+  function registerGraze(state, bullet, x, y, hitbox, shipId, sweptDistance = null) {
     if (!bullet || bullet.grazed || !(bullet.life > 0)) return { grazed: false, ready: false };
     const dx = bullet.x - x, dy = bullet.y - y;
-    const distance = Math.hypot(dx, dy);
+    const distance = sweptDistance == null ? Math.hypot(dx, dy) : sweptDistance;
     const collision = hitbox + bullet.r;
     const margin = shipId === "falcon" ? 43 : 32;
     if (!(distance > collision && distance <= collision + margin)) return { grazed: false, ready: false };
