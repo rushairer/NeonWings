@@ -27,11 +27,14 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [ ] Visual QA for crowded HUD/bullets and sustained Overdrive effects in Chromium/Android
 - [ ] Optional telegraph/accessibility tuning after playtesting
 
-## v25 — Living worlds (planned)
+## v25 — Living worlds (in progress)
 
-- [ ] Real mechanics for shield, splitter and carrier enemies
+- [x] Shield enemies have finite frontal barriers, break visual effects and flanking counterplay
+- [x] Splitters release two child drones and carriers launch capped escort waves with hatch telegraphs
+- [x] Child drones have restricted score economy (no wave goals, combo, energy or drops); Stage 1 roster corrected
 - [ ] Five differentiated environments; environmental hazards and readable telegraphs
 - [ ] Boss weak points, detachable parts and first-clear ending
+- [ ] Device/browser gameplay balance checks for Stages 3–5
 
 ## v26 — Arcade universe (planned)
 

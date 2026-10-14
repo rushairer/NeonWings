@@ -7,6 +7,7 @@ const platform = require("../src/platform.js");
 const controller = require("../src/controller.js");
 const combat = require("../src/combat.js");
 const collision = require("../src/collision.js");
+const enemyBehaviors = require("../src/enemy-behaviors.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -26,7 +27,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -240,4 +241,89 @@ test("F3 debug HUD toggles without affecting gameplay or overriding held keys", 
   assert.equal(app.eval("performanceOverlay"), true);
   app.events.get("keydown")({ code:"F3", repeat:false, preventDefault() {} });
   assert.equal(app.eval("performanceOverlay"), false);
+});
+
+test("shield absorbs frontal damage before hull damage, visibly breaks after depletion", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=2;
+    spawnEnemyOfKind("shield", 600, 480, {vx:0, vy:0})`);
+  const hp=app.eval("game.enemies[0].hp");
+  const shield=app.eval("game.enemies[0].shieldHp");
+  app.eval("damageEnemy(game.enemies[0], 2, 570, 480)");
+  assert.equal(app.eval("game.enemies[0].hp"), hp);
+  assert.equal(app.eval("game.enemies[0].shieldHp"), shield-2);
+  app.eval("damageEnemy(game.enemies[0], 99, 570, 480)");
+  assert.equal(app.eval("game.enemies[0].shieldHp"), 0);
+  assert.equal(app.eval("game.enemies[0].hp <= 0"), true);
+});
+
+test("flanking around a shield unit damages its hull without consuming armor", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=2;
+    spawnEnemyOfKind("shield", 600, 480, {vx:0, vy:0});
+    game.player.x=750`);
+  const hp=app.eval("game.enemies[0].hp");
+  const shield=app.eval("game.enemies[0].shieldHp");
+  app.eval("damageEnemy(game.enemies[0], 2, 605, 480)");
+  assert.equal(app.eval("game.enemies[0].hp"), hp-2);
+  assert.equal(app.eval("game.enemies[0].shieldHp"), shield);
+});
+
+test("splitters produce exactly two smaller drones, but child kills cannot farm chain, charge or wave progress", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=3;
+    spawnEnemyOfKind("splitter", 630, 440, {vx:0, vy:0});
+    damageEnemy(game.enemies[0], game.enemies[0].hp + 1, 620, 440)`);
+  assert.equal(app.eval("game.enemies.filter(e => e.minion).length"), 2);
+  assert.equal(app.eval("game.waveKills"), 1);
+  assert.equal(app.eval("game.combat.energy"), 3);
+  assert.equal(app.eval("game.combat.combo"), 1);
+  app.eval(`for (const e of game.enemies.filter(e=>e.minion))
+    damageEnemy(e, e.hp + 1, e.x, e.y)`);
+  assert.equal(app.eval("game.waveKills"), 1);
+  assert.equal(app.eval("game.combat.energy"), 3);
+  assert.equal(app.eval("game.combat.combo"), 1);
+  assert.equal(app.eval("game.stats.kills"), 3);
+});
+
+test("carriers launch at most three escorts with a per-carrier live-escort limit", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=4;
+    spawnEnemyOfKind("carrier", 900, 480, {vx:0,vy:0,shootCd:9})`);
+  app.eval("updateEnemies(1.1)");
+  assert.equal(app.eval("game.enemies.filter(e => e.minion).length"), 1);
+  assert.equal(app.eval("game.enemies[0].launchedEscorts"), 1);
+  app.eval("updateEnemies(3.0); updateEnemies(3.0); updateEnemies(3.0)");
+  assert.equal(app.eval("game.enemies[0].launchedEscorts"), 3);
+  assert.ok(app.eval("game.enemies.filter(e => e.minion).length") <= 2);
+});
+
+test("first stage formations never spawn late-game shield enemies and enemy count is bounded", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=0; game.loop=1; game.t=21;
+    spawnFormation()`);
+  assert.equal(app.eval("game.enemies.every(e => stageDef().enemies.includes(e.kind))"), true);
+  assert.ok(app.eval("game.enemies.some(e => e.kind === 'gunner')"));
+  app.eval("for(let i=0;i<500;i++) spawnEnemyOfKind('scout',600,480)");
+  assert.equal(app.eval("game.enemies.length"), 84);
+});
+
+test("BOMB immediately destroys a splitter without causing a second enemy wave", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=3; game.bomb=2;
+    spawnEnemyOfKind("splitter", 700, 480, {vx:0,vy:0});
+    useBomb()`);
+  assert.equal(app.eval("game.enemies.filter(e => e.minion).length"), 0);
+  assert.equal(app.eval("game.enemies.length"), 0);
+  assert.equal(app.eval("game.waveKills"), 1);
+  assert.equal(app.eval("game.combat.energy"), 0);
+});
+
+test("shield and carrier visual telegraphs render in Canvas smoke environment", () => {
+  const app = boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=4;
+    spawnEnemyOfKind("shield", 750, 440, {vx:0,vy:0});
+    spawnEnemyOfKind("carrier", 880, 530, {vx:0,vy:0});
+    game.enemies[1].launchCooldown=0.55;
+    drawFrame(0.016)`);
 });

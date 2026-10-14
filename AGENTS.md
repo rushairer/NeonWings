@@ -11,6 +11,7 @@
 - Keep game content and platform helpers separate. Do not mix UI/canvas resize calculations with combat simulation logic.
 - Keep scoring, graze detection, hit penalties, active timers and fighter Overdrive rules in `src/combat.js`. Do not grant more than one graze per enemy bullet or charge/combo rewards from Bomb kills; stage transitions and pause must not consume active time.
 - One Overdrive input maps to one physical button distinct from primary/secondary fire and Bomb; respect older persisted settings and preserve Start/Select/B menu actions.
+- Enemy special mechanics belong in `src/enemy-behaviors.js`. Shield absorption precedes hull damage; splitter/carrier children have spawn caps and cannot increase wave kills, combo, Overdrive energy or loot. Keep Stage 1 formations within Stage 1 enemy roster.
 - Collisions use `src/collision.js` swept segments for fast projectiles. Check all damaging bullet contacts before awarding any graze for that frame; rendering FX and projectile arrays have explicit per-type budgets. Do not claim FPS compliance from unit tests alone.
 - Before shipping, run `npm run check`, `npm test`, `npm run build`. Do not equate passing unit tests with actual AYANEO hardware validation.
 - Store configuration locally without secret keys; gracefully handle storage denial and corrupted data.

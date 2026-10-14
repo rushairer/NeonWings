@@ -7,6 +7,7 @@ const platform = require("../src/platform.js");
 const controller = require("../src/controller.js");
 const combat = require("../src/combat.js");
 const collision = require("../src/collision.js");
+const enemyBehaviors = require("../src/enemy-behaviors.js");
 const source = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
 function makePad(index = 0) {
@@ -27,7 +28,7 @@ function boot(storage = new Map()) {
   const canvas = { style: {}, getContext: () => ({}) };
   const window = {
     innerWidth: 1280, innerHeight: 960,
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors,
     addEventListener: (event, callback) => listeners.set(event, callback)
   };
   const document = {

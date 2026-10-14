@@ -8,6 +8,8 @@ const W = 1280;
     if (!combatRules) throw new Error("NeonWings combat runtime missing");
     const collision = window.NeonCollision;
     if (!collision) throw new Error("NeonWings collision runtime missing");
+    const enemyBehaviors = window.NeonEnemyBehaviors;
+    if (!enemyBehaviors) throw new Error("NeonWings enemy behavior runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -16,7 +18,8 @@ const W = 1280;
       particles: 800,
       enemyBullets: 340,
       playerBullets: 240,
-      missiles: 48
+      missiles: 48,
+      enemies: enemyBehaviors.CONFIG.maxEnemies
     });
 
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
@@ -920,6 +923,7 @@ const W = 1280;
         highScore: highScore(),
         combat: combatRules.createState(),
         missileSequence: 0,
+        enemySequence: 0,
         stats: {
           kills: 0,
           bombsUsed: 0,
@@ -1039,11 +1043,13 @@ const W = 1280;
     }
 
     function awardEnemyKill(e, source = "shot") {
-      const result = combatRules.registerKill(game.combat, Math.round(e.score * difficultyScale()), selectedShip().id, source);
+      const rewards = enemyBehaviors.rewardsFor(e);
+      const creditSource = rewards.chargeAndCombo ? source : "bomb";
+      const result = combatRules.registerKill(game.combat, Math.round(e.score * difficultyScale()), selectedShip().id, creditSource);
       game.score += result.points;
-      game.waveKills += 1;
+      if (rewards.countsTowardWave) game.waveKills += 1;
       game.stats.kills += 1;
-      maybeDropPowerup(e);
+      if (rewards.dropsPowerup) maybeDropPowerup(e);
       announceDriveReady(result.ready);
     }
 
@@ -1316,18 +1322,23 @@ const W = 1280;
     }
 
     function spawnEnemyOfKind(kind, x = W + rand(50, 170), y = rand(90, H - 90), extra = {}) {
+      if (game.enemies.length >= LIMITS.enemies) return null;
       const s = enemyStats(kind);
-
-      game.enemies.push({
+      const hp = Math.ceil(s.hp * (extra.hpMul || 1));
+      const enemy = enemyBehaviors.initializeEnemy({
+        id: ++game.enemySequence,
         kind,
+        minion: extra.minion === true,
+        parentId: extra.parentId ?? null,
         x,
         y,
         baseY: extra.baseY ?? y,
-        vx: (extra.vx ?? s.vx),
+        vx: extra.vx ?? s.vx,
         vy: extra.vy ?? rand(-40, 40),
-        r: s.r,
-        hp: Math.ceil(s.hp * (extra.hpMul || 1)),
-        maxHp: Math.ceil(s.hp * (extra.hpMul || 1)),
+        r: Math.max(14, Math.round(s.r * (extra.sizeMul || 1))),
+        sizeMul: extra.sizeMul || 1,
+        hp,
+        maxHp: hp,
         color: s.color,
         core: s.core,
         shootCd: extra.shootCd ?? rand(0.55, s.shoot),
@@ -1335,6 +1346,21 @@ const W = 1280;
         score: Math.round(s.score * (extra.scoreMul || 1)),
         wave: extra.wave ?? rand(0, Math.PI * 2),
         t: rand(0, 5)
+      });
+      game.enemies.push(enemy);
+      return enemy;
+    }
+
+    function spawnMinionDrone(x, y, parentId = null) {
+      return spawnEnemyOfKind("drone", x, clamp(y, 74, H - 74), {
+        minion: true,
+        parentId,
+        sizeMul: 0.72,
+        hpMul: 0.60,
+        scoreMul: 0.28,
+        vx: -365,
+        vy: rand(-50, 50),
+        shootCd: 1.1
       });
     }
 
@@ -1372,7 +1398,7 @@ const W = 1280;
         }
       } else {
         // Reward carrier chance.
-        const kind = st.enemies.includes("carrier") ? "carrier" : st.enemies.includes("bomber") ? "bomber" : "shield";
+        const kind = st.enemies.includes("carrier") ? "carrier" : st.enemies.includes("bomber") ? "bomber" : st.enemies.includes("shield") ? "shield" : "gunner";
         spawnEnemyOfKind(kind, W + 150, rand(180, H - 180), { hpMul: 0.85, scoreMul: 1.4, shootCd: 0.8 });
       }
     }
@@ -1385,6 +1411,7 @@ const W = 1280;
     function drawEnemy(e) {
       ctx.save();
       ctx.translate(e.x, e.y);
+      if (e.minion) ctx.scale(e.sizeMul || 0.72, e.sizeMul || 0.72);
 
       if (e.kind === "bomber" || e.kind === "carrier") {
         poly([[-58,-22], [30,-28], [62,0], [30,28], [-58,22]], e.color);
@@ -1414,6 +1441,34 @@ const W = 1280;
         rect(-16, -11, 26, 22, "#201436");
         rect(-6, -5, 12, 10, e.core);
         rect(-52, -5, 12, 10, "#3b2440");
+      }
+
+      if (e.kind === "shield" && e.shieldHp > 0) {
+        // Shield blocks fire coming from the left; an arc makes the protected side legible.
+        ctx.save();
+        ctx.globalAlpha = 0.38 + 0.42 * e.shieldHp / e.shieldMax;
+        ctx.strokeStyle = "#8ef7ff";
+        ctx.shadowColor = "#8ef7ff";
+        ctx.shadowBlur = 15;
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(0, 0, e.r + 14, Math.PI / 2, Math.PI * 1.5);
+        ctx.stroke();
+        ctx.restore();
+      }
+      if (e.kind === "splitter" && !e.minion) {
+        ctx.fillStyle = "#eaffef";
+        ctx.fillRect(-22, -22, 11, 11);
+        ctx.fillRect(12, 12, 11, 11);
+      }
+      if (e.kind === "carrier" && e.launchedEscorts < enemyBehaviors.CONFIG.carrierMaxLaunches && e.launchCooldown < 0.75) {
+        ctx.save();
+        ctx.globalAlpha = 0.56 + Math.sin(game.t * 16) * 0.35;
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = "#fff4b7";
+        ctx.fillStyle = "#fff4b7";
+        ctx.fillRect(-20, -17, 40, 34);
+        ctx.restore();
       }
 
       ctx.restore();
@@ -1457,7 +1512,11 @@ const W = 1280;
     }
 
     function updateEnemies(dt) {
-      for (const e of game.enemies) {
+      // Newly-launched minions join the next frame, not this frame's iteration.
+      const initialCount = game.enemies.length;
+      for (let i = 0; i < initialCount; i++) {
+        const e = game.enemies[i];
+        if (!e || e.hp <= 0) continue;
         e.t += dt;
         e.x += e.vx * dt;
 
@@ -1472,6 +1531,20 @@ const W = 1280;
         }
 
         if (e.y < 70 || e.y > H - 70) e.vy *= -1;
+
+        if (e.kind === "carrier" && e.x < W - 120 && e.x > 110) {
+          const escortCount = game.enemies.reduce(
+            (count, other) => count + (other.hp > 0 && other.parentId === e.id ? 1 : 0), 0
+          );
+          const launched = enemyBehaviors.maybeLaunchEscort(
+            e, game.stageMode, escortCount, LIMITS.enemies - game.enemies.length, dt
+          );
+          if (launched) {
+            const shift = e.launchedEscorts % 2 ? -54 : 54;
+            spawnMinionDrone(e.x - 46, e.y + shift, e.id);
+            showMessage("CARRIER DEPLOYED DRONE", 0.8);
+          }
+        }
 
         if (e.x < W - 80 && e.x > 80) {
           e.shootCd -= dt;
@@ -1872,7 +1945,24 @@ const W = 1280;
     }
 
     function damageEnemy(e, amount, x, y, c = "#64f4ff") {
-      e.hp -= amount;
+      if (e.hp <= 0) return;
+
+      const shield = enemyBehaviors.applyFrontalShield(e, amount, game.player.x);
+      if (shield.absorbed > 0) {
+        // The frontal shield loses finite charge, then remaining damage spills into the hull.
+        sfx("enemyHit");
+        for (let i = 0; i < 8; i++) addParticle(
+          e.x - e.r, e.y + rand(-e.r, e.r), rand(-125, 35), rand(-130, 130),
+          rand(0.15, 0.44), "#8ef7ff"
+        );
+        if (shield.broken) {
+          sfx("clear");
+          showMessage("ENEMY SHIELD BROKEN", 0.8);
+        }
+      }
+      if (shield.hullDamage <= 0) return;
+
+      e.hp -= shield.hullDamage;
       sfx("enemyHit");
       game.shake = Math.max(game.shake, 3);
 
@@ -1885,6 +1975,18 @@ const W = 1280;
         game.shake = Math.max(game.shake, 8);
 
         for (let i = 0; i < 26; i++) addParticle(e.x, e.y, rand(-240, 190), rand(-220, 220), rand(0.25, 0.70), i % 2 ? e.core : e.color);
+
+        // A destroyed parent can split only during waves, not under BOMB or during a Boss fight.
+        if (game.stageMode === "WAVE" && game.waveKills < killTarget()) {
+          const count = enemyBehaviors.splitterCount(
+            e, game.stageMode, LIMITS.enemies - game.enemies.length
+          );
+          for (let i = 0; i < count; i++) {
+            const offset = i === 0 ? -46 : 46;
+            spawnMinionDrone(e.x - 8, e.y + offset);
+          }
+          if (count > 0) showMessage("SPLITTER DEPLOYED MINIONS", 0.9);
+        }
 
         if (game.stageMode === "WAVE" && game.waveKills >= killTarget()) {
           spawnBoss();
@@ -2858,7 +2960,7 @@ const W = 1280;
       ctx.strokeRect(x, y, 378, 98);
       drawText(`FPS ${game.fps}   >25ms ${game.slowFrames}`, x + 14, y + 25, 19, "left", "#8ef7ff");
       drawText(`FX ${game.particles.length}/${LIMITS.particles}  EB ${game.enemyBullets.length}/${LIMITS.enemyBullets}`, x + 14, y + 53, 18, "left");
-      drawText(`SHOTS ${game.bullets.length}  MISSILES ${game.missiles.length}`, x + 14, y + 81, 18, "left");
+      drawText(`EN ${game.enemies.length}/${LIMITS.enemies} SHOTS ${game.bullets.length} MISSILES ${game.missiles.length}`, x + 14, y + 81, 17, "left");
       ctx.restore();
     }
 
@@ -2920,7 +3022,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v24.1", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v25.0", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
