@@ -1,0 +1,14 @@
+# NeonWings contributor and agent guide
+
+- Fact source is this repository's current `main`. Read this file and ROADMAP.md before changes.
+- Target: handheld-first arcade shoot-'em-up for AYANEO AIR MINI, with web keyboard fallback.
+- Keep the logical game field at **1280 × 960 (4:3)**; use letterboxing rather than nonlinear viewport stretching.
+- Preserve all five stages, boss transitions, the two original fighters, weapon drops, bomb rewards and multiple loops unless explicitly changing gameplay.
+- Gamepad defaults: B fires, A bombs, Start pauses/resumes, Select toggles fullscreen. Never silently invert them.
+- Backgrounding or focus loss must not advance gameplay or force unexpected resume; avoid stuck firing inputs.
+- Do not make Web Audio or vibration mandatory; unsupported browser APIs must degrade gracefully.
+- Prefer dependency-free static delivery while the v23 foundation is being stabilized; new build dependencies require a documented rationale.
+- Keep game content and platform helpers separate. Do not mix UI/canvas resize calculations with combat simulation logic.
+- Before shipping, run `npm run check`, `npm test`, `npm run build`. Do not equate passing unit tests with actual AYANEO hardware validation.
+- Store configuration locally without secret keys; gracefully handle storage denial and corrupted data.
+- Update README/ROADMAP for user-visible changes. Use small, scoped commits to main and never force-push.
