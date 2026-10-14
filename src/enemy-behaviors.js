@@ -42,7 +42,7 @@
     if (enemy.kind !== "carrier" || enemy.minion) return false;
     if (Number.isFinite(dt) && dt > 0) enemy.launchCooldown = Math.max(0, enemy.launchCooldown - dt);
     if (stageMode !== "WAVE" || availableSlots < 1 || activeEscorts >= CONFIG.carrierMaxAliveEscorts) return false;
-    if (enemy.launchedEscorts >= CONFIG.carrierMaxLaunches || enemy.launchCooldown > 0) return false;
+    if (enemy.launchedEscorts >= CONFIG.carrierMaxLaunches || enemy.launchCooldown > 1e-6) return false;
     enemy.launchedEscorts += 1;
     enemy.launchCooldown = CONFIG.carrierLaunchPeriod;
     return true;
