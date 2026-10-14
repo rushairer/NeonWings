@@ -32,7 +32,7 @@
   }
 
   function attackDelayMultiplier(boss) {
-    return 1 + destroyedCount(boss) * BALANCE.attackDelayPerBroken;
+    return Math.round((1 + destroyedCount(boss) * BALANCE.attackDelayPerBroken) * 100) / 100;
   }
 
   function reducedFanCount(boss, requested) {
