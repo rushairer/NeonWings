@@ -69,7 +69,8 @@ test("controller options can remap fire/bomb and persist to another boot", () =>
   assert.equal(app.eval('pauseMenu.page'), 'controls');
   app.eval('pauseMenu.index = 1; adjustPauseItem(1)');
   assert.equal(app.eval('settings.firePrimary'), 2);
-  app.eval('pauseMenu.index = 3; adjustPauseItem(1)');
+  app.eval('pauseMenu.index = 3; adjustPauseItem(1); adjustPauseItem(1)');
+  // A -> B -> Y: X is already reserved for the primary fire button.
   assert.equal(app.eval('settings.bombButton'), 3);
   const after = boot(storage);
   assert.equal(after.eval('settings.firePrimary'), 2);
