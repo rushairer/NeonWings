@@ -10,6 +10,8 @@ const W = 1280;
     if (!collision) throw new Error("NeonWings collision runtime missing");
     const enemyBehaviors = window.NeonEnemyBehaviors;
     if (!enemyBehaviors) throw new Error("NeonWings enemy behavior runtime missing");
+    const worlds = window.NeonWorlds;
+    if (!worlds) throw new Error("NeonWings world runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -848,6 +850,10 @@ const W = 1280;
         playTone(132, 0.38, "sawtooth", 0.16, 1.35, 0, true);
         playNoise(0.55, 0.26, 1800, 0, true, "lowpass");
         setTimeout(() => playLaserSweep(280, 1600, 0.32, 0.14, 0), 80);
+      } else if (name === "hazardWarn") {
+        if (!sfxAllowed("hazardWarn", 0.9)) return;
+        playTone(720, 0.20, "triangle", 0.075, 0.60, 0, false);
+        playTone(480, 0.26, "sine", 0.060, 0.73, 0, false);
       } else if (name === "graze") {
         if (!sfxAllowed("graze", 0.13)) return;
         playTone(1250, 0.04, "triangle", 0.022, 1.16, pxPan, false);
@@ -924,6 +930,7 @@ const W = 1280;
         combat: combatRules.createState(),
         missileSequence: 0,
         enemySequence: 0,
+        world: worlds.createState(0),
         stats: {
           kills: 0,
           bombsUsed: 0,
@@ -2183,6 +2190,8 @@ const W = 1280;
       game.bullets.length = 0;
       game.missiles.length = 0;
       game.powerups.length = 0;
+      game.world.phase = "idle";
+      game.world.hazard = null;
 
       // Every Boss guarantees one collectible Bomb item.
       // It appears in the active play area and drifts left like P / +HP.
@@ -2585,6 +2594,7 @@ const W = 1280;
 
       game.loop = game.pendingStageAdvance.loop;
       game.stageIndex = game.pendingStageAdvance.stageIndex;
+      game.world = worlds.createState(game.stageIndex);
       game.transitionText = game.pendingStageAdvance.text;
       game.pendingStageAdvance = null;
 
@@ -2638,6 +2648,15 @@ const W = 1280;
         return;
       }
 
+      const hazardChange = worlds.step(
+        game.world, dt, game.stageIndex, game.player, game.stageMode, game.loop
+      );
+      if (hazardChange.warning) {
+        sfx("hazardWarn");
+        showMessage(worlds.PROFILES[game.stageIndex].name + " - EVADE", 1.15);
+      }
+      if (hazardChange.activated) game.shake = Math.max(game.shake, 5);
+
       if (combatRules.tick(game.combat, dt)) {
         sfx("overdriveOff");
         showMessage("OVERDRIVE OFFLINE", 0.8);
@@ -2688,6 +2707,13 @@ const W = 1280;
         }
       }
 
+      if (game.invuln <= 0 && worlds.touchesPlayer(
+        game.world, game.player.x, game.player.y, selectedShip().hitbox
+      )) {
+        damagePlayer();
+        showMessage("ARENA HAZARD - " + worlds.PROFILES[game.stageIndex].name, 1.25);
+      }
+
       if (game.stageIntro > 0) game.stageIntro = Math.max(0, game.stageIntro - dt);
     }
 
@@ -2715,6 +2741,7 @@ const W = 1280;
       ctx.fillStyle = hexToRgba(st.grid, 0.08);
       for (let x = -80; x < W + 80; x += 80) ctx.fillRect(x, 0, 2, H);
       for (let y = 0; y < H; y += 80) ctx.fillRect(0, y, W, 2);
+      worlds.drawAtmosphere(ctx, game.stageIndex, game.t, W, H);
     }
 
     function hexToRgba(hex, alpha) {
@@ -3166,6 +3193,7 @@ const W = 1280;
       }
 
       drawBackground(dt);
+      worlds.drawHazard(ctx, game.world, W, H);
       drawOverdriveAura();
       drawBombFlash();
 

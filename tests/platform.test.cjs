@@ -8,6 +8,7 @@ const controller = require("../src/controller.js");
 const combat = require("../src/combat.js");
 const collision = require("../src/collision.js");
 const enemyBehaviors = require("../src/enemy-behaviors.js");
+const worlds = require("../src/worlds.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -32,6 +33,7 @@ function boot(options = {}) {
     NeonCombat: combat,
     NeonCollision: collision,
     NeonEnemyBehaviors: enemyBehaviors,
+    NeonWorlds: worlds,
     innerWidth: options.width || 1920,
     innerHeight: options.height || 1080,
     addEventListener: (event, fn) => windowEvents.set(event, fn)
@@ -113,6 +115,7 @@ test("static HTML loads platform before game and doesn't embed legacy code", () 
   assert.ok(html.indexOf('src="./src/controller.js"') < html.indexOf('src="./src/combat.js"'));
   assert.ok(html.indexOf('src="./src/combat.js"') < html.indexOf('src="./src/collision.js"'));
   assert.ok(html.indexOf('src="./src/collision.js"') < html.indexOf('src="./src/enemy-behaviors.js"'));
-  assert.ok(html.indexOf('src="./src/enemy-behaviors.js"') < html.indexOf('src="./src/game.js"'));
+  assert.ok(html.indexOf('src="./src/enemy-behaviors.js"') < html.indexOf('src="./src/worlds.js"'));
+  assert.ok(html.indexOf('src="./src/worlds.js"') < html.indexOf('src="./src/game.js"'));
   assert.ok(!html.includes("<script>"));
 });

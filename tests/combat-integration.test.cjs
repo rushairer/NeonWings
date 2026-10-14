@@ -8,6 +8,7 @@ const controller = require("../src/controller.js");
 const combat = require("../src/combat.js");
 const collision = require("../src/collision.js");
 const enemyBehaviors = require("../src/enemy-behaviors.js");
+const worlds = require("../src/worlds.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -27,7 +28,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -326,4 +327,38 @@ test("shield and carrier visual telegraphs render in Canvas smoke environment", 
     spawnEnemyOfKind("carrier", 880, 530, {vx:0,vy:0});
     game.enemies[1].launchCooldown=0.55;
     drawFrame(0.016)`);
+});
+
+test("world warning activates on schedule and HUD/render remains safe for all five stages", () => {
+  const app = boot();
+  app.eval('game.state = "PLAYING"; game.stageIntro=0; game.world.time=0.01; updatePlaying(0.016)');
+  assert.equal(app.eval('game.world.phase'), 'warning');
+  assert.equal(app.eval('game.world.stageIndex'), 0);
+  assert.equal(app.eval('game.world.hazard.kind'), 'rail');
+  assert.equal(app.eval('game.hp'), 3);
+  app.eval('game.world.time = 0.01; updatePlaying(0.016)');
+  assert.equal(app.eval('game.world.phase'), 'active');
+  app.eval('for(let i=0;i<5;i++){ game.stageIndex=i; game.world=worlds.createState(i); game.world.phase="warning"; game.world.hazard=worlds.geometryFor(i,game.player,0); drawFrame(0.016); game.world.phase="active"; drawFrame(0.016); }');
+});
+
+test("a player exposed to active arena hazard takes damage only once while invulnerable", () => {
+  const app = boot();
+  app.eval('game.state="PLAYING"; game.stageIndex=1; game.world=worlds.createState(1); game.world.phase="active"; game.world.time=0.60; game.world.hazard=worlds.geometryFor(1,{x:350,y:480},0); game.player.x=game.world.hazard.x; game.player.y=game.world.hazard.y; game.stageIntro=0; game.spawnTimer=500; game.formationTimer=500; updatePlaying(0.016)');
+  assert.equal(app.eval('game.hp'), 2);
+  assert.ok(app.eval('game.invuln') > 0);
+  app.eval('updatePlaying(0.016)');
+  assert.equal(app.eval('game.hp'), 2);
+});
+
+test("arena hazard clocks freeze on pause and Boss reward, then reset for next stage", () => {
+  const app = boot();
+  app.eval('game.state = "PLAYING"; game.world.time=3; pauseGame()');
+  app.eval('updatePlaying(1)');
+  assert.equal(app.eval('game.world.time'), 3);
+  app.eval('game.state="PLAYING"; game.stageMode="BOSS_REWARD"; game.rewardTimer=100; updatePlaying(1)');
+  assert.equal(app.eval('game.world.time'), 3);
+  app.eval('game.pendingStageAdvance={loop:1,stageIndex:1,text:"STAGE CLEAR"}; finishBossReward()');
+  assert.equal(app.eval('game.world.stageIndex'), 1);
+  assert.equal(app.eval('game.world.time'), 7);
+  assert.equal(app.eval('game.world.phase'), 'idle');
 });

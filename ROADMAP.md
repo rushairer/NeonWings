@@ -32,7 +32,8 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Shield enemies have finite frontal barriers, break visual effects and flanking counterplay
 - [x] Splitters release two child drones and carriers launch capped escort waves with hatch telegraphs
 - [x] Child drones have restricted score economy (no wave goals, combo, energy or drops); Stage 1 roster corrected
-- [ ] Five differentiated environments; environmental hazards and readable telegraphs
+- [x] Five procedural environments, unique warned hazards, normal damage / invulnerability, and pause-safe timers
+- [ ] Stage environment hardware/balance verification in Chromium and AYANEO AIR MINI
 - [ ] Boss weak points, detachable parts and first-clear ending
 - [ ] Device/browser gameplay balance checks for Stages 3–5
 

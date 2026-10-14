@@ -13,6 +13,7 @@ A controller-first, five-stage, side-scrolling neon arcade shooter built with br
 - v24 in development: graze enemy shots to build charge, chain enemy kills for up to 5× score, then manually trigger NEON OVERDRIVE to temporarily amplify the current weapon
 - v24.1 hardening: continuous projectile collision against fast bullets, contact priority over grazing, bounded effects/projectile arrays, and F3 performance diagnostics
 - v25 first pass: shield enemies protect their front until shield energy is broken; splitters release two small drones on destruction; carriers visibly telegraph and launch a limited number of escorts
+- v25 arenas: five different procedural backdrops and timed, telegraphed hazards; warnings indicate the future danger zone before it can hurt the player
 
 ## Run
 
@@ -71,6 +72,20 @@ Press **F3** on a keyboard during play to toggle a small performance diagnostics
 Spawned drones give only small points and count toward total defeated enemies. They do **not** increase stage wave goals, extend combos, charge Overdrive, or drop pickups. The live enemy list has a maximum size of 84. Stage 1's reward formation no longer spawns Stage 3-only shield units.
 
 These features currently have unit/integration coverage, not final hardware or browser balance approval.
+
+## Five living arenas
+
+The original 1280×960 Canvas playfield now renders stage-specific, procedurally drawn environment silhouettes, with no remote images or new dependencies. Hazards are **fair, timed, and telegraphed**:
+
+| Stage | Environment mechanic | Player counterplay |
+| --- | --- | --- |
+| 1 — Skyline | Narrow electrical rail column | Move outside the glowing vertical stripe |
+| 2 — Canyon | Targeted rockfall impact | Leave the marked circular impact zone |
+| 3 — Orbit | Full-width cryo lane | Move above or below the marked row |
+| 4 — Hive | Blooming spore cloud | Exit the spore ring |
+| 5 — Citadel | Diagonal core scan | Dodge away from the slanted energy path |
+
+Danger zones are purely visual during their warning phase. Damage can only occur during their brief active phase and uses normal HP, invulnerability, and fighter shielding. The world clock freezes during pause, transitions, and boss rewards, then resets for the next stage. These mechanics still require real browser/handheld balance testing.
 
 ## GitHub Pages
 
