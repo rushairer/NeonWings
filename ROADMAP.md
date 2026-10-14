@@ -34,7 +34,9 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Child drones have restricted score economy (no wave goals, combo, energy or drops); Stage 1 roster corrected
 - [x] Five procedural environments, unique warned hazards, normal damage / invulnerability, and pause-safe timers
 - [ ] Stage environment hardware/balance verification in Chromium and AYANEO AIR MINI
-- [ ] Boss weak points, detachable parts and first-clear ending
+- [x] Five Bosses have individually destructible front weapon mounts; destroying mounts reduces projectile density/frequency
+- [x] First complete clear saves high score and shows a victory epilogue; explicit Start/Enter returns to stronger Loop 2
+- [ ] Boss weapon readability and difficulty pacing acceptance tests on real devices
 - [ ] Device/browser gameplay balance checks for Stages 3–5
 
 ## v26 — Arcade universe (planned)

@@ -11,6 +11,8 @@
 - Keep game content and platform helpers separate. Do not mix UI/canvas resize calculations with combat simulation logic.
 - Keep scoring, graze detection, hit penalties, active timers and fighter Overdrive rules in `src/combat.js`. Do not grant more than one graze per enemy bullet or charge/combo rewards from Bomb kills; stage transitions and pause must not consume active time.
 - One Overdrive input maps to one physical button distinct from primary/secondary fire and Bomb; respect older persisted settings and preserve Start/Select/B menu actions.
+- Boss targetable weapon modules belong in `src/boss-parts.js`: route bullet/missile swept hits to surviving mounts before the Boss hull; part-break rewards are one-shot; turret destruction must change actual attack cadence.
+- After the first five-stage clear, show a non-timed ENDING state with saved high score. Continue to Loop 2 explicitly; do not regress the infinite loop progression.
 - Stage hazards and procedural parallax belong in `src/worlds.js`: warn before damage; use the existing HP/invulnerability path; freeze outside active play; reset per stage; avoid external assets and unbounded particles.
 - Enemy special mechanics belong in `src/enemy-behaviors.js`. Shield absorption precedes hull damage; splitter/carrier children have spawn caps and cannot increase wave kills, combo, Overdrive energy or loot. Keep Stage 1 formations within Stage 1 enemy roster.
 - Collisions use `src/collision.js` swept segments for fast projectiles. Check all damaging bullet contacts before awarding any graze for that frame; rendering FX and projectile arrays have explicit per-type budgets. Do not claim FPS compliance from unit tests alone.

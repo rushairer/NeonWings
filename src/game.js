@@ -12,6 +12,8 @@ const W = 1280;
     if (!enemyBehaviors) throw new Error("NeonWings enemy behavior runtime missing");
     const worlds = window.NeonWorlds;
     if (!worlds) throw new Error("NeonWings world runtime missing");
+    const bossParts = window.NeonBossParts;
+    if (!bossParts) throw new Error("NeonWings boss parts runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -931,6 +933,7 @@ const W = 1280;
         missileSequence: 0,
         enemySequence: 0,
         world: worlds.createState(0),
+        firstClearAcknowledged: false,
         stats: {
           kills: 0,
           bombsUsed: 0,
@@ -1118,6 +1121,10 @@ const W = 1280;
       else if (game.state === "SELECT") startSelectedGame();
       else if (game.state === "PLAYING") pauseGame();
       else if (game.state === "PAUSED") resumeGame();
+      else if (game.state === "ENDING") {
+        game.state = "PLAYING";
+        finishBossReward();
+      }
     }
 
     function gameOver() {
@@ -2028,6 +2035,7 @@ const W = 1280;
         lastPhase: 0,
         warning: 0
       };
+      game.boss.parts = bossParts.createParts(game.boss);
 
       sfx("boss");
       hapticBoss();
@@ -2050,8 +2058,9 @@ const W = 1280;
     function fireBossAimedFan(count, spread, speed, r, color, glow) {
       const b = game.boss;
       const base = Math.atan2(game.player.y - b.y, game.player.x - (b.x - b.rx * 0.7));
-      const start = -spread * (count - 1) / 2;
-      for (let i = 0; i < count; i++) {
+      const effectiveCount = bossParts.reducedFanCount(b, count);
+      const start = -spread * (effectiveCount - 1) / 2;
+      for (let i = 0; i < effectiveCount; i++) {
         fireBossBullet(b.x - b.rx * 0.7, b.y + rand(-24, 24), base + start + spread * i, speed, r, color, glow);
       }
     }
@@ -2158,23 +2167,49 @@ const W = 1280;
         }
         b.shoot = Math.max(0.46, 0.98 - (game.loop - 1) * 0.07 - b.phase * 0.10);
       }
+      // Each destroyed weapon mount materially reduces the Boss attack rate.
+      b.shoot *= bossParts.attackDelayMultiplier(b);
     }
 
-    function damageBoss(amount, x, y, color = "#fff1a8") {
-      const b = game.boss;
-      if (!b || b.hp <= 0 || !b.active) return false;
+    function damageBoss(amount, x, y, color = "#fff1a8", targetPart = null) {
+      const boss = game.boss;
+      if (!boss || boss.hp <= 0 || !boss.active) return false;
 
-      b.hp -= amount;
-      game.shake = Math.max(game.shake, 4);
-      for (let i = 0; i < 10; i++) addParticle(x, y, rand(-180, 90), rand(-150, 150), rand(0.16, 0.38), i % 2 ? color : b.color);
+      if (targetPart) {
+        const effect = bossParts.damagePart(boss, targetPart, amount);
+        if (!effect.hit) return false;
+        if (effect.broken) {
+          game.shake = Math.max(game.shake, 16);
+          game.score += 120 + game.stageIndex * 35;
+          sfx("explode");
+          haptic("bossPart", 0.55, 0.4, 120, 0.25);
+          showMessage(targetPart.id + " DESTROYED - BOSS WEAKENED", 1.5);
+          for (let i = 0; i < 35; i++) addParticle(
+            boss.x + targetPart.x, boss.y + targetPart.y,
+            rand(-240, 175), rand(-220, 220), rand(0.24, 0.65),
+            i % 2 ? "#fff4b7" : boss.color
+          );
+        } else {
+          for (let i = 0; i < 5; i++) addParticle(
+            boss.x + targetPart.x, boss.y + targetPart.y,
+            rand(-100, 65), rand(-105, 105), rand(0.10, 0.28), "#8ef7ff"
+          );
+        }
+      } else {
+        boss.hp -= amount;
+        game.shake = Math.max(game.shake, 4);
+        for (let i = 0; i < 10; i++) addParticle(
+          x, y, rand(-180, 90), rand(-150, 150), rand(0.16, 0.38),
+          i % 2 ? color : boss.color
+        );
+      }
 
-      if (b.hp <= 0) {
+      if (boss.hp <= 0) {
         awardBossKill();
         sfx("explode");
         haptic("bossDead", 1.0, 0.85, 360, 0.6);
         killBoss();
       }
-
       return true;
     }
 
@@ -2278,6 +2313,42 @@ const W = 1280;
         rect(-170, -18, 28, 36, "#2b164d");
       }
 
+      // Two visible, player-facing weapon mounts. Their destruction changes the attack pattern.
+      for (const part of b.parts || []) {
+        ctx.save();
+        ctx.translate(part.x, part.y);
+        if (part.hp > 0) {
+          const hpRatio = clamp(part.hp / part.maxHp, 0, 1);
+          ctx.globalAlpha = 0.72 + Math.sin(game.t * 14) * 0.12;
+          ctx.fillStyle = "#182c48";
+          ctx.strokeStyle = "#8ef7ff";
+          ctx.lineWidth = 4;
+          ctx.shadowColor = "#8ef7ff";
+          ctx.shadowBlur = 13;
+          ctx.beginPath();
+          ctx.arc(0, 0, part.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          ctx.fillStyle = "#fff4b7";
+          ctx.fillRect(-8, -8, 16, 16);
+          ctx.strokeStyle = "#fff4b7";
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(0, 0, part.r + 8, -Math.PI / 2, -Math.PI / 2 + hpRatio * Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = "#ff8aa7";
+          ctx.lineWidth = 4;
+          ctx.globalAlpha = 0.42;
+          ctx.beginPath();
+          ctx.moveTo(-16, -16); ctx.lineTo(16, 16);
+          ctx.moveTo(16, -16); ctx.lineTo(-16, 16);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       ctx.restore();
 
       if (b.active) {
@@ -2286,6 +2357,8 @@ const W = 1280;
         ctx.fillStyle = b.color;
         ctx.fillRect(258, 174, 764 * clamp(b.hp / b.maxHp, 0, 1), 14);
         drawText(b.name, W / 2, 144, 28, "center", b.core);
+        drawText(`WEAPON MOUNTS ${bossParts.intact(b.parts)} / 2  -  HIT GLOWING TURRETS`,
+          W / 2, 214, 18, "center", "#8ef7ff");
       }
     }
 
@@ -2328,12 +2401,18 @@ const W = 1280;
         }
 
         const b = game.boss;
-        if (m.life > 0 && b && b.active && collision.sweptAabbHit(
-          fromX, fromY, m.x, m.y,
-          b.x - b.rx - m.r, b.x + b.rx + m.r, b.y - b.ry - m.r, b.y + b.ry + m.r
-        )) {
-          m.life = 0;
-          damageBoss(m.power, m.x, m.y, "#ffd76b");
+        if (m.life > 0 && b && b.active) {
+          const targetPart = bossParts.findHit(b, fromX, fromY, m.x, m.y, m.r);
+          if (targetPart) {
+            m.life = 0;
+            damageBoss(m.power, m.x, m.y, "#ffd76b", targetPart);
+          } else if (collision.sweptAabbHit(
+            fromX, fromY, m.x, m.y,
+            b.x - b.rx - m.r, b.x + b.rx + m.r, b.y - b.ry - m.r, b.y + b.ry + m.r
+          )) {
+            m.life = 0;
+            damageBoss(m.power, m.x, m.y, "#ffd76b");
+          }
         }
       }
 
@@ -2371,14 +2450,23 @@ const W = 1280;
         }
 
         const boss = game.boss;
-        if (!b.dead && boss && boss.active && collision.sweptAabbHit(
-          b.previousX, b.previousY, b.x, b.y,
-          boss.x - boss.rx - b.r, boss.x + boss.rx + b.r,
-          boss.y - boss.ry - b.r, boss.y + boss.ry + b.r
-        )) {
+        if (!b.dead && boss && boss.active) {
           const close = boss.x >= game.player.x && boss.x - game.player.x <= 300;
-          b.dead = true; // Even a piercing lance only damages a boss once.
-          damageBoss((b.power || 1) * (b.pointBlank && close ? 1.5 : 1), b.x, b.y, b.c);
+          const damage = (b.power || 1) * (b.pointBlank && close ? 1.5 : 1);
+          const part = bossParts.findHit(
+            boss, b.previousX, b.previousY, b.x, b.y, b.r
+          );
+          if (part) {
+            b.dead = true;
+            damageBoss(damage, b.x, b.y, b.c, part);
+          } else if (collision.sweptAabbHit(
+            b.previousX, b.previousY, b.x, b.y,
+            boss.x - boss.rx - b.r, boss.x + boss.rx + b.r,
+            boss.y - boss.ry - b.r, boss.y + boss.ry + b.r
+          )) {
+            b.dead = true; // Piercing lances also only hit a Boss once.
+            damageBoss(damage, b.x, b.y, b.c);
+          }
         }
       }
 
@@ -2591,6 +2679,17 @@ const W = 1280;
 
     function finishBossReward() {
       if (!game.pendingStageAdvance) return;
+
+      // First five-stage clear earns a proper ending screen, but never breaks the arcade loop.
+      if (!game.firstClearAcknowledged && game.loop === 1 && game.stageIndex === stages.length - 1 &&
+          game.pendingStageAdvance.loop === 2) {
+        game.firstClearAcknowledged = true;
+        game.highScore = saveHighScore(game.score);
+        game.state = "ENDING";
+        stopBgm();
+        showMessage("ALL FIVE STAGES CLEAR", 2);
+        return;
+      }
 
       game.loop = game.pendingStageAdvance.loop;
       game.stageIndex = game.pendingStageAdvance.stageIndex;
@@ -3049,7 +3148,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v25.0", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v25.1", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -3099,6 +3198,44 @@ const W = 1280;
         ? "SPEED HIGH    HITBOX SMALL    HP 3/5"
         : "SPEED MEDIUM    ARMOR HIGH    HP 4/6";
       drawText(stat, W / 2, 832, 20, "center", "rgba(231,251,255,.75)");
+    }
+
+    function drawFirstClearEnding() {
+      // Static background is intentional: no gameplay simulation while acknowledging a clear.
+      drawBackground(0);
+      ctx.fillStyle = "rgba(2, 6, 23, 0.86)";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.translate(W / 2, 315);
+      ctx.strokeStyle = "#8ef7ff";
+      ctx.shadowColor = "#38e8ff";
+      ctx.shadowBlur = 34;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 345, 164, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+
+      drawText("NEON WINGS", W / 2, 265, 76, "center", "#e7fbff");
+      drawText("FIRST DAWN", W / 2, 333, 42, "center", "#fff4b7");
+      drawText("ALL FIVE STAGES CLEARED", W / 2, 401, 29, "center", "#8ef7ff");
+
+      ctx.fillStyle = "rgba(8, 19, 46, 0.80)";
+      ctx.fillRect(238, 455, 804, 210);
+      ctx.strokeStyle = "rgba(142, 247, 255, 0.46)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(238, 455, 804, 210);
+      drawText("THE SKIES ARE YOURS - FOR NOW", W / 2, 500, 26, "center", "#e7fbff");
+      drawText(`SCORE ${String(game.score).padStart(6, "0")}`, 310, 565, 29, "left", "#fff4b7");
+      drawText(`KILLS ${game.stats.kills}`, 770, 565, 25, "left", "#8ef7ff");
+      drawText(`MAX CHAIN ${game.combat.maxCombo}`, 310, 617, 23, "left", "#e7fbff");
+      drawText(`GRAZES ${game.combat.grazes}`, 770, 617, 23, "left", "#e7fbff");
+
+      drawText("LOOP 2 AWAITS - ENEMIES BECOME STRONGER", W / 2, 741, 26, "center", "#e7fbff");
+      drawText("PRESS START / ENTER TO CONTINUE", W / 2, 805, 27, "center", "#8ef7ff");
+      drawText("OR CLOSE THE GAME - YOUR HIGH SCORE IS SAVED", W / 2, 856, 17, "center", "#b4c7dc");
     }
 
     function drawGameOverScreen(dt) {
@@ -3192,6 +3329,12 @@ const W = 1280;
         return;
       }
 
+      if (game.state === "ENDING") {
+        drawFirstClearEnding();
+        ctx.restore();
+        return;
+      }
+
       drawBackground(dt);
       worlds.drawHazard(ctx, game.world, W, H);
       drawOverdriveAura();
@@ -3266,6 +3409,14 @@ const W = 1280;
         if (e.code === "Enter" || e.code === "NumpadEnter") {
           e.preventDefault();
           returnToTitle();
+        }
+        return;
+      }
+
+      if (game.state === "ENDING") {
+        if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") {
+          e.preventDefault();
+          if (!e.repeat) handleStartButton();
         }
         return;
       }

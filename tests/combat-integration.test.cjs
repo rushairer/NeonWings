@@ -9,6 +9,7 @@ const combat = require("../src/combat.js");
 const collision = require("../src/collision.js");
 const enemyBehaviors = require("../src/enemy-behaviors.js");
 const worlds = require("../src/worlds.js");
+const bossParts = require("../src/boss-parts.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -28,7 +29,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -361,4 +362,79 @@ test("arena hazard clocks freeze on pause and Boss reward, then reset for next s
   assert.equal(app.eval('game.world.stageIndex'), 1);
   assert.equal(app.eval('game.world.time'), 7);
   assert.equal(app.eval('game.world.phase'), 'idle');
+});
+
+test("all five bosses spawn two glowing destroyable weapon mounts", () => {
+  const app = boot();
+  for (let stage=0; stage<5; stage++) {
+    app.eval(`game.state="PLAYING"; game.stageIndex=${stage}; game.stageMode="WAVE"; game.boss=null; spawnBoss()`);
+    assert.equal(app.eval("game.boss.parts.length"),2);
+    assert.equal(app.eval("bossParts.intact(game.boss.parts)"),2);
+  }
+});
+
+test("swept blue weapon shot breaks a Boss turret and reduces Boss core HP", () => {
+  const app=boot();
+  app.eval(`game.state="PLAYING"; game.stageMode="WAVE"; spawnBoss();
+    game.boss.active=true; game.boss.x=900; game.boss.y=460;
+    const p=game.boss.parts[0];
+    game.bullets=[{x:300,y:game.boss.y+p.y,vx:1800,vy:0,r:9,power:200,c:"#8ef7ff"}];
+    updatePlayerBullets(0.40)`);
+  assert.equal(app.eval("game.boss.parts[0].hp"), 0);
+  assert.equal(app.eval("game.boss.hp < game.boss.maxHp"), true);
+  assert.equal(app.eval("game.boss.parts[1].hp > 0"), true);
+  assert.equal(app.eval("bossParts.attackDelayMultiplier(game.boss)"), 1.32);
+  assert.equal(app.eval("game.bullets.length"), 0);
+});
+
+test("aiming away from weapon mounts still damages the Boss hull", () => {
+  const app=boot();
+  app.eval(`game.state="PLAYING"; spawnBoss();
+    game.boss.active=true; game.boss.x=900;game.boss.y=460;
+    game.bullets=[{x:300,y:460,vx:1800,vy:0,r:9,power:20,c:"#fff"}];
+    updatePlayerBullets(.40)`);
+  assert.equal(app.eval("game.boss.hp"), 630);
+  assert.equal(app.eval("game.boss.parts.every(p => p.hp === p.maxHp)"),true);
+});
+
+test("first five-stage clear stops simulation, saves high score and waits for Start", () => {
+  const app=boot();
+  app.eval(`game.state="PLAYING"; game.stageIndex=4; game.loop=1;
+    game.score=12345;game.pendingStageAdvance={loop:2,stageIndex:0,text:"LOOP 2 START"};
+    game.stageMode="BOSS_REWARD"; finishBossReward()`);
+  assert.equal(app.eval("game.state"), "ENDING");
+  assert.equal(app.eval("game.highScore"),12345);
+  assert.equal(app.eval("game.stageIndex"),4);
+  assert.equal(app.eval("game.firstClearAcknowledged"),true);
+  app.eval("drawFrame(.016)");
+  app.eval("updatePlaying(5)");
+  assert.equal(app.eval("game.stageIndex"),4);
+  app.events.get("keydown")({code:"Enter",repeat:false,preventDefault(){}});
+  assert.equal(app.eval("game.state"),"PLAYING");
+  assert.equal(app.eval("game.loop"),2);
+  assert.equal(app.eval("game.stageIndex"),0);
+  assert.equal(app.eval("game.world.stageIndex"),0);
+  assert.equal(app.eval("game.stageMode"),"TRANSITION");
+});
+
+test("later loops continue straight to next stage without replaying the first-clear ending", () => {
+  const app=boot();
+  app.eval(`game.state="PLAYING";game.loop=2;game.stageIndex=4;
+    game.firstClearAcknowledged=true;
+    game.pendingStageAdvance={loop:3,stageIndex:0,text:"LOOP 3 START"};
+    finishBossReward()`);
+  assert.equal(app.eval("game.state"),"PLAYING");
+  assert.equal(app.eval("game.loop"),3);
+  assert.equal(app.eval("game.stageIndex"),0);
+  assert.equal(app.eval("game.stageMode"),"TRANSITION");
+});
+
+test("Boss part-break reward cannot be claimed more than once", () => {
+  const app=boot();
+  app.eval(`game.state="PLAYING";spawnBoss();game.boss.active=true;
+    const part=game.boss.parts[0];damageBoss(200,game.boss.x+part.x,game.boss.y+part.y,"#fff",part)`);
+  const score=app.eval("game.score");
+  assert.ok(score>0);
+  app.eval(`damageBoss(200,game.boss.x+game.boss.parts[0].x,game.boss.y+game.boss.parts[0].y,"#fff",game.boss.parts[0])`);
+  assert.equal(app.eval("game.score"),score);
 });
