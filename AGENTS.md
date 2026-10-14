@@ -4,7 +4,7 @@
 - Target: handheld-first arcade shoot-'em-up for AYANEO AIR MINI, with web keyboard fallback.
 - Keep the logical game field at **1280 × 960 (4:3)**; use letterboxing rather than nonlinear viewport stretching.
 - Preserve all five stages, boss transitions, the two original fighters, weapon drops, bomb rewards and multiple loops unless explicitly changing gameplay.
-- Gamepad defaults: B fires, A bombs, Start pauses/resumes, Select toggles fullscreen. Never silently invert them.
+- Gamepad defaults: B and RT fire, A bombs, Start pauses/resumes, Select toggles fullscreen. Remapping is limited to fire/bomb combat actions; physical B confirms menus, and Start/Select are never remapped.
 - Backgrounding or focus loss must not advance gameplay or force unexpected resume; avoid stuck firing inputs.
 - Do not make Web Audio or vibration mandatory; unsupported browser APIs must degrade gracefully.
 - Prefer dependency-free static delivery while the v23 foundation is being stabilized; new build dependencies require a documented rationale.

@@ -9,8 +9,9 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Pause when tab/app is hidden or focused window is lost; clear held keys
 - [x] Gracefully handle browser environments without localStorage
 - [x] Add dependency-free Node smoke tests and GitHub Actions build/deploy workflow
-- [ ] Remappable gamepad controls and tunable stick deadzone
-- [ ] Gamepad disconnect/reconnect recovery; device testing on AYANEO AIR MINI
+- [x] Remappable dual fire buttons / bomb button, saved settings and tunable stick deadzone (8–44%)
+- [x] Gamepad disconnection pauses; reconnect requires releasing held buttons before explicit resume
+- [ ] AYANEO AIR MINI physical controller, rumble and audio regression testing
 - [ ] Verify first-load, pause, sound and controller behaviors in Chromium and Android
 - [ ] Consider TypeScript/Vite only after confirming no regression in Pages/offline behavior
 

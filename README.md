@@ -8,7 +8,8 @@ A controller-first, five-stage, side-scrolling neon arcade shooter built with br
 - 11 enemy types, formations, three weapon families, collectible power-ups and BOMB
 - Gamepad rumble where browser/device supports it, Web Audio synthesis, volume and vibration options
 - Pause, fullscreen, local high score, end-of-run statistics
-- v23 foundation: 4:3 letterbox sizing on any viewport; auto-pause on app background/focus loss; browser-storage fallback
+- v23 foundation: 4:3 letterbox sizing; auto-pause on background/focus loss or controller disconnection; browser-storage fallback
+- Pause menu → **CONTROLLER OPTIONS**: change both fire buttons and BOMB independently, calibrate stick deadzone (8–44%), reset controller defaults without resetting audio
 
 ## Run
 
@@ -33,13 +34,14 @@ The build copies the offline-capable game files to `dist/`. No bundling or remot
 | Context | Gamepad | Keyboard |
 | --- | --- | --- |
 | Move | Left stick / D-pad | Arrow keys / WASD |
-| Fire (hold) | B | Space / J / K |
-| BOMB | A | Shift / L / X |
+| Fire (hold) | B / RT (remappable) | Space / J / K |
+| BOMB | A (remappable) | Shift / L / X |
 | Start / pause / resume | Start | Enter to start; P / Escape to pause/resume |
 | Select fighter / adjust pause settings | D-pad | Arrow keys |
 | Fullscreen | Select | F |
+| Controller options | Pause → Controller Options (B to confirm) | Pause → Controller Options (Enter to confirm) |
 
-When the page becomes hidden or loses focus, gameplay pauses without auto-resuming. Resume explicitly to prevent accidental damage.
+When the page becomes hidden, loses focus, or the active controller disconnects, gameplay pauses without auto-resuming. After reconnect, release held buttons before pressing Start again. Menu confirmation always stays on physical B and system Start/Select are never remapped.
 
 ## GitHub Pages
 

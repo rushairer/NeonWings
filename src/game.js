@@ -2,6 +2,8 @@ const W = 1280;
     const H = 960;
     const platform = window.NeonPlatform;
     if (!platform) throw new Error("NeonWings platform runtime missing");
+    const controller = window.NeonController;
+    if (!controller) throw new Error("NeonWings controller runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -22,6 +24,7 @@ const W = 1280;
       right: false,
       a: false,
       b: false,
+      bomb: false,
       any: false
     };
 
@@ -171,12 +174,14 @@ const W = 1280;
       sfx: 1.0,
       bgm: 1.0,
       haptics: true,
-      hapticStrength: 1.0
+      hapticStrength: 1.0,
+      ...controller.DEFAULTS
     };
 
     let settings = loadSettings();
 
     let pauseMenu = {
+      page: "main",
       index: 0
     };
 
@@ -188,7 +193,17 @@ const W = 1280;
       "SFX VOLUME",
       "BGM VOLUME",
       "VIBRATION",
-      "VIBRATION STRENGTH"
+      "VIBRATION STRENGTH",
+      "CONTROLLER OPTIONS"
+    ];
+
+    const controllerItems = [
+      "BACK",
+      "FIRE PRIMARY",
+      "FIRE SECONDARY",
+      "BOMB BUTTON",
+      "STICK DEADZONE",
+      "RESTORE DEFAULTS"
     ];
 
     function loadSettings() {
@@ -198,6 +213,7 @@ const W = 1280;
         const parsed = stored && typeof stored === "object" && !Array.isArray(stored) ? stored : {};
         return {
           ...DEFAULT_SETTINGS,
+          ...controller.sanitizeSettings(parsed),
           master: platform.finiteClamped(parsed.master, DEFAULT_SETTINGS.master, 0, 1.6),
           sfx: platform.finiteClamped(parsed.sfx, DEFAULT_SETTINGS.sfx, 0, 1.8),
           bgm: platform.finiteClamped(parsed.bgm, DEFAULT_SETTINGS.bgm, 0, 1.8),
@@ -227,35 +243,59 @@ const W = 1280;
       return `${Math.round(v * 100)}%`;
     }
 
+    function currentPauseItems() {
+      return pauseMenu.page === "controls" ? controllerItems : pauseItems;
+    }
+
     function pauseMenuMove(dir) {
-      pauseMenu.index = (pauseMenu.index + dir + pauseItems.length) % pauseItems.length;
+      const items = currentPauseItems();
+      pauseMenu.index = (pauseMenu.index + dir + items.length) % items.length;
       sfx("select");
     }
 
     function adjustPauseItem(dir) {
-      const step = 0.1;
       const i = pauseMenu.index;
-
-      if (i === 3) {
-        settings.master = clamp(Math.round((settings.master + dir * step) * 10) / 10, 0, 1.6);
-      } else if (i === 4) {
-        settings.sfx = clamp(Math.round((settings.sfx + dir * step) * 10) / 10, 0, 1.8);
-      } else if (i === 5) {
-        settings.bgm = clamp(Math.round((settings.bgm + dir * step) * 10) / 10, 0, 1.8);
-      } else if (i === 6) {
-        settings.haptics = !settings.haptics;
-      } else if (i === 7) {
-        settings.hapticStrength = clamp(Math.round((settings.hapticStrength + dir * step) * 10) / 10, 0.2, 1.0);
+      if (pauseMenu.page === "controls") {
+        if (i === 1) {
+          settings.firePrimary = controller.cycleButton(settings.firePrimary, dir, [settings.fireSecondary, settings.bombButton]);
+        } else if (i === 2) {
+          settings.fireSecondary = controller.cycleButton(settings.fireSecondary, dir, [settings.firePrimary, settings.bombButton]);
+        } else if (i === 3) {
+          settings.bombButton = controller.cycleButton(settings.bombButton, dir, [settings.firePrimary, settings.fireSecondary]);
+        } else if (i === 4) {
+          settings.stickDeadzone = clamp(Math.round(settings.stickDeadzone * 100 + dir * 2) / 100, 0.08, 0.44);
+        } else {
+          return;
+        }
       } else {
-        return;
+        const step = 0.1;
+        if (i === 3) {
+          settings.master = clamp(Math.round((settings.master + dir * step) * 10) / 10, 0, 1.6);
+        } else if (i === 4) {
+          settings.sfx = clamp(Math.round((settings.sfx + dir * step) * 10) / 10, 0, 1.8);
+        } else if (i === 5) {
+          settings.bgm = clamp(Math.round((settings.bgm + dir * step) * 10) / 10, 0, 1.8);
+        } else if (i === 6) {
+          settings.haptics = !settings.haptics;
+        } else if (i === 7) {
+          settings.hapticStrength = clamp(Math.round((settings.hapticStrength + dir * step) * 10) / 10, 0.2, 1.0);
+        } else {
+          return;
+        }
       }
-
       saveSettings();
       sfx("select");
       if (settings.haptics) haptic("setting", 0.18, 0.16, 35, 0.05);
     }
 
     function pauseItemValue(index) {
+      if (pauseMenu.page === "controls") {
+        if (index === 1) return controller.buttonLabel(settings.firePrimary);
+        if (index === 2) return controller.buttonLabel(settings.fireSecondary);
+        if (index === 3) return controller.buttonLabel(settings.bombButton);
+        if (index === 4) return pct(settings.stickDeadzone);
+        return "";
+      }
       if (index === 3) return pct(settings.master);
       if (index === 4) return pct(settings.sfx);
       if (index === 5) return pct(settings.bgm);
@@ -266,12 +306,15 @@ const W = 1280;
 
     function pauseGame() {
       stopBgm();
+      pauseMenu.page = "main";
       pauseMenu.index = 0;
       game.state = "PAUSED";
       showMessage("PAUSED");
     }
 
     function resumeGame() {
+      pauseMenu.page = "main";
+      controllerNotice = "";
       game.state = "PLAYING";
       startBgm();
       showMessage("RESUME");
@@ -279,13 +322,30 @@ const W = 1280;
 
     function activatePauseItem() {
       const i = pauseMenu.index;
-
+      if (pauseMenu.page === "controls") {
+        if (i === 0) {
+          pauseMenu.page = "main";
+          pauseMenu.index = pauseItems.length - 1;
+          sfx("select");
+        } else if (i === 5) {
+          Object.assign(settings, controller.DEFAULTS);
+          saveSettings();
+          sfx("confirm");
+        } else {
+          adjustPauseItem(1);
+        }
+        return;
+      }
       if (i === 0) {
         resumeGame();
       } else if (i === 1) {
         startSelectedGame();
       } else if (i === 2) {
         returnToTitle();
+      } else if (i === pauseItems.length - 1) {
+        pauseMenu.page = "controls";
+        pauseMenu.index = 0;
+        sfx("confirm");
       } else {
         adjustPauseItem(1);
       }
@@ -397,7 +457,7 @@ const W = 1280;
       strong *= settings.hapticStrength;
       weak *= settings.hapticStrength;
 
-      const pad = readPads()[0];
+      const pad = readActivePad();
 
       // Chromium / Android Gamepad Haptics. AYANEO devices may expose this
       // through the browser when running in Chrome or compatible WebView.
@@ -990,25 +1050,64 @@ const W = 1280;
       showMessage("GAME OVER", 2);
     }
 
-    function readPads() {
-      return navigator.getGamepads
-        ? Array.from(navigator.getGamepads()).filter(Boolean)
-        : [];
+    let activeGamepadIndex = null;
+    let gamepadAwaitRelease = false;
+    let controllerNotice = "";
+
+    function resetGamepadEdges() {
+      for (const key of Object.keys(gamepadEdge)) gamepadEdge[key] = false;
+    }
+
+    function readActivePad() {
+      if (!navigator.getGamepads) return null;
+      let pads;
+      try {
+        pads = Array.from(navigator.getGamepads() || []).filter(pad => pad && pad.connected !== false);
+      } catch (_) {
+        return null;
+      }
+      if (activeGamepadIndex !== null) {
+        return pads.find(pad => pad.index === activeGamepadIndex) || null;
+      }
+      const first = pads[0] || null;
+      if (first) activeGamepadIndex = first.index;
+      return first;
+    }
+
+    function handleControllerLoss() {
+      if (activeGamepadIndex === null) return;
+      activeGamepadIndex = null;
+      gamepadAwaitRelease = true;
+      resetGamepadEdges();
+      controllerNotice = "CONTROLLER DISCONNECTED - RECONNECT TO CONTINUE";
+      pauseForInterruption("CONTROLLER LOST - PAUSED");
+      showMessage("CONTROLLER LOST - PAUSED", 2.5);
     }
 
     function pollGamepadSystemButtons() {
-      const pad = readPads()[0];
-      if (!pad) return;
+      const pad = readActivePad();
+      if (!pad) {
+        if (activeGamepadIndex !== null) handleControllerLoss();
+        return;
+      }
 
-      const startDown = !!pad.buttons?.[9]?.pressed;
-      const selectDown = !!pad.buttons?.[8]?.pressed;
-      const upDown = !!pad.buttons?.[12]?.pressed || (pad.axes?.[1] || 0) < -0.45;
-      const downDown = !!pad.buttons?.[13]?.pressed || (pad.axes?.[1] || 0) > 0.45;
-      const leftDown = !!pad.buttons?.[14]?.pressed || (pad.axes?.[0] || 0) < -0.45;
-      const rightDown = !!pad.buttons?.[15]?.pressed || (pad.axes?.[0] || 0) > 0.45;
-      const aDown = !!pad.buttons?.[0]?.pressed;
-      const bDown = !!pad.buttons?.[1]?.pressed;
-      const anyDown = pad.buttons?.some(button => button.pressed) || false;
+      // When a pad reconnects, held Start/A must be released before any action fires.
+      if (gamepadAwaitRelease) {
+        if (controller.anyPressed(pad)) return;
+        gamepadAwaitRelease = false;
+        resetGamepadEdges();
+      }
+
+      const startDown = controller.pressed(pad, 9);
+      const selectDown = controller.pressed(pad, 8);
+      const upDown = controller.pressed(pad, 12) || (pad.axes?.[1] || 0) < -0.45;
+      const downDown = controller.pressed(pad, 13) || (pad.axes?.[1] || 0) > 0.45;
+      const leftDown = controller.pressed(pad, 14) || (pad.axes?.[0] || 0) < -0.45;
+      const rightDown = controller.pressed(pad, 15) || (pad.axes?.[0] || 0) > 0.45;
+      const aDown = controller.pressed(pad, 0);
+      const bDown = controller.pressed(pad, 1);
+      const bombDown = controller.pressed(pad, settings.bombButton);
+      const anyDown = controller.anyPressed(pad);
 
       if (anyDown && !gamepadEdge.any) unlockAudio();
 
@@ -1022,16 +1121,13 @@ const W = 1280;
         if (downDown && !gamepadEdge.down) pauseMenuMove(1);
         if (leftDown && !gamepadEdge.left) adjustPauseItem(-1);
         if (rightDown && !gamepadEdge.right) adjustPauseItem(1);
+        // Physical B always confirms menus, irrespective of combat remapping.
         if (bDown && !gamepadEdge.b) activatePauseItem();
       } else {
-        // Functional controls:
-        // - Start: confirm / pause / resume / return from Game Over
-        // - Select: fullscreen
-        // - B button 1: attack during gameplay
-        // - A button 0: bomb only during gameplay
+        // Start / Select remain system keys. Combat fire and bomb are configurable.
         if (startDown && !gamepadEdge.start) handleStartButton();
         if (selectDown && !gamepadEdge.select) toggleFullscreen();
-        if (game.state === "PLAYING" && aDown && !gamepadEdge.a) useBomb();
+        if (game.state === "PLAYING" && bombDown && !gamepadEdge.bomb) useBomb();
 
         if (game.state === "SELECT") {
           if (leftDown && !gamepadEdge.left) cycleShip(-1);
@@ -1047,6 +1143,7 @@ const W = 1280;
       gamepadEdge.right = rightDown;
       gamepadEdge.a = aDown;
       gamepadEdge.b = bDown;
+      gamepadEdge.bomb = bombDown;
       gamepadEdge.any = anyDown;
     }
 
@@ -2071,9 +2168,9 @@ const W = 1280;
     }
 
     function readInput(dt) {
-      const pad = readPads()[0];
-      const axisX = pad && Math.abs(pad.axes[0] || 0) > 0.18 ? pad.axes[0] : 0;
-      const axisY = pad && Math.abs(pad.axes[1] || 0) > 0.18 ? pad.axes[1] : 0;
+      const pad = gamepadAwaitRelease ? null : readActivePad();
+      const axisX = controller.normalizeAxis(pad?.axes?.[0], settings.stickDeadzone);
+      const axisY = controller.normalizeAxis(pad?.axes?.[1], settings.stickDeadzone);
 
       let ix = 0;
       let iy = 0;
@@ -2102,8 +2199,8 @@ const W = 1280;
         keys.Space ||
         keys.KeyJ ||
         keys.KeyK ||
-        pad?.buttons?.[1]?.pressed ||
-        pad?.buttons?.[7]?.pressed
+        controller.pressed(pad, settings.firePrimary) ||
+        controller.pressed(pad, settings.fireSecondary)
       );
     }
 
@@ -2504,18 +2601,20 @@ const W = 1280;
 
       ctx.fillStyle = "rgba(5,6,20,.78)";
       ctx.fillRect(0, 0, W, H);
+      const controlsPage = pauseMenu.page === "controls";
+      const items = currentPauseItems();
 
-      drawText("PAUSED", W / 2, 176, 68, "center", "#e7fbff");
-      drawText("D-PAD: SELECT / ADJUST     B: CONFIRM     START: RESUME", W / 2, 232, 22, "center", "rgba(231,251,255,.78)");
+      drawText(controlsPage ? "CONTROLLER OPTIONS" : "PAUSED", W / 2, 176, controlsPage ? 56 : 68, "center", "#e7fbff");
+      drawText("D-PAD: SELECT / ADJUST     B / ENTER: CONFIRM     START: RESUME", W / 2, 232, 21, "center", "rgba(231,251,255,.78)");
 
       const boxX = W / 2 - 360;
       const boxY = 290;
-      const rowH = 52;
+      const rowH = 50;
 
       ctx.fillStyle = "rgba(0,0,0,.46)";
-      ctx.fillRect(boxX, boxY - 22, 720, rowH * pauseItems.length + 44);
+      ctx.fillRect(boxX, boxY - 22, 720, rowH * items.length + 44);
 
-      for (let i = 0; i < pauseItems.length; i++) {
+      for (let i = 0; i < items.length; i++) {
         const y = boxY + i * rowH;
         const selected = i === pauseMenu.index;
 
@@ -2528,15 +2627,20 @@ const W = 1280;
         }
 
         const labelColor = selected ? "#8ef7ff" : "rgba(231,251,255,.78)";
-        drawText(`${selected ? "▶" : " "} ${pauseItems[i]}`, boxX + 52, y, 26, "left", labelColor);
-
+        drawText((selected ? "> " : "  ") + items[i], boxX + 52, y, 25, "left", labelColor);
         const value = pauseItemValue(i);
         if (value) {
           drawText(value, boxX + 650, y, 24, "right", selected ? "#fff4b7" : "rgba(231,251,255,.70)");
         }
       }
 
-      drawText("A: BOMB ONLY IN GAMEPLAY     B: FIRE / MENU CONFIRM", W / 2, 754, 20, "center", "rgba(231,251,255,.65)");
+      if (controllerNotice) {
+        drawText(controllerNotice, W / 2, 822, 21, "center", "#fff4b7");
+      } else if (controlsPage) {
+        drawText("B / RT FIRE, A BOMB BY DEFAULT. MENU B AND START ALWAYS WORK.", W / 2, 822, 19, "center", "rgba(231,251,255,.70)");
+      } else {
+        drawText("CONTROLLER OPTIONS: REMAP FIRE / BOMB AND CALIBRATE STICK", W / 2, 822, 19, "center", "rgba(231,251,255,.70)");
+      }
     }
 
     function drawTitleScreen(dt) {
@@ -2781,7 +2885,14 @@ const W = 1280;
         else if (e.code === "ArrowLeft" || e.code === "KeyA") adjustPauseItem(-1);
         else if (e.code === "ArrowRight" || e.code === "KeyD") adjustPauseItem(1);
         else if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space" || e.code === "KeyJ") activatePauseItem();
-        else if (e.code === "KeyP" || e.code === "Escape") resumeGame();
+        else if (e.code === "KeyP" || e.code === "Escape") {
+          if (pauseMenu.page === "controls") {
+            pauseMenu.page = "main";
+            pauseMenu.index = pauseItems.length - 1;
+          } else {
+            resumeGame();
+          }
+        }
         return;
       }
 
@@ -2803,8 +2914,18 @@ const W = 1280;
 
     window.addEventListener("contextmenu", e => e.preventDefault());
 
-    window.addEventListener("gamepadconnected", () => {
-      showMessage("GAMEPAD CONNECTED");
+    window.addEventListener("gamepadconnected", (event) => {
+      if (activeGamepadIndex === null && Number.isInteger(event.gamepad?.index)) {
+        activeGamepadIndex = event.gamepad.index;
+        gamepadAwaitRelease = true;
+        resetGamepadEdges();
+      }
+      controllerNotice = "CONTROLLER CONNECTED - PRESS START TO RESUME";
+      showMessage("GAMEPAD CONNECTED", 1.5);
+    });
+
+    window.addEventListener("gamepaddisconnected", (event) => {
+      if (event.gamepad?.index === activeGamepadIndex) handleControllerLoss();
     });
 
     requestAnimationFrame(loop);

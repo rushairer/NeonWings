@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const platform = require("../src/platform.js");
+const controller = require("../src/controller.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -24,6 +25,7 @@ function boot(options = {}) {
   };
   const browserWindow = {
     NeonPlatform: platform,
+    NeonController: controller,
     innerWidth: options.width || 1920,
     innerHeight: options.height || 1080,
     addEventListener: (event, fn) => windowEvents.set(event, fn)
@@ -101,6 +103,7 @@ test("game still starts when localStorage is blocked", () => {
 
 test("static HTML loads platform before game and doesn't embed legacy code", () => {
   const html = fs.readFileSync(path.join(__dirname, "../index.html"), "utf8");
-  assert.ok(html.indexOf('src="./src/platform.js"') < html.indexOf('src="./src/game.js"'));
+  assert.ok(html.indexOf('src="./src/platform.js"') < html.indexOf('src="./src/controller.js"'));
+  assert.ok(html.indexOf('src="./src/controller.js"') < html.indexOf('src="./src/game.js"'));
   assert.ok(!html.includes("<script>"));
 });
