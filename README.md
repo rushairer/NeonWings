@@ -16,6 +16,7 @@ A controller-first, five-stage, side-scrolling neon arcade shooter built with br
 - v25 arenas: five different procedural backdrops and timed, telegraphed hazards; warnings indicate the future danger zone before it can hurt the player
 - v25.1 Boss dismantling: shoot either visible cannon mount to disable it; destroyed turrets reduce the Boss attack density/rate; clearing the fifth stage for the first time awards a pauseable victory epilogue before optional Loop 2
 - v26 preview: select Classic, Boss Rush, or Training during fighter selection; Boss Rush has its own high score while Training never writes ranked scores
+- v26.1 local hangar: Classic and Boss Rush each retain their five highest ranked runs, show a run grade and unlock eight milestone badges. Training remains unranked.
 
 ## Run
 
@@ -111,7 +112,9 @@ Press Start / Enter at the title screen to choose a fighter **and a mode**. Use 
 
 **Training** restores full HP and equipment between rounds and revives after losing the last hit point, while preserving visual hit feedback and practice statistics. Pause → Return to Title to exit the drill. Normal enemy combat, hazards and Boss phases remain enabled so that practice has real mechanics.
 
-No online services, accounts, new dependencies or network calls are required. Mission mode, local achievement grades, daily seeded challenges and replay-compatible simulation are **not** yet shipped.
+**Local Records and Achievements:** From the title screen press **H on keyboard / X on the gamepad** to open the local hangar. It shows the best five completed runs for Classic and Boss Rush separately, their grades and chosen fighter, plus eight unlockable milestones. Start / Enter / H returns to the title menu. Grades summarize the run milestone and damage taken (S/A/B/C); they are not online skill rankings. Training is explicitly excluded from records and achievements.
+
+The Classic historical high-score key and Boss Rush high-score key remain unchanged. The Top Five / achievements are stored under a separate `neon_wings_arcade_records_v26` localStorage key and degrade to in-memory state if browser storage is unavailable. No accounts, network services, external assets or new dependencies are introduced. Mission mode, daily seeded challenges and replay-compatible simulation are **not** yet shipped.
 
 ## GitHub Pages
 

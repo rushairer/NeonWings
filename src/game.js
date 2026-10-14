@@ -16,6 +16,13 @@ const W = 1280;
     if (!bossParts) throw new Error("NeonWings boss parts runtime missing");
     const modes = window.NeonModes;
     if (!modes) throw new Error("NeonWings arcade-mode runtime missing");
+    const records = window.NeonRecords;
+    if (!records) throw new Error("NeonWings local records runtime missing");
+    let recordsStorage = null;
+    try { recordsStorage = localStorage; } catch (_) {
+      // Sandboxed/private browsing may deny even reading the storage property.
+    }
+    const recordStore = records.createStore(recordsStorage);
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -43,6 +50,7 @@ const W = 1280;
       right: false,
       lb: false,
       rb: false,
+      x: false,
       a: false,
       b: false,
       bomb: false,
@@ -936,6 +944,37 @@ const W = 1280;
       return cachedBossRushBest;
     }
 
+    function rankedRunSummary(clear = false) {
+      return {
+        mode: game.mode,
+        score: game.score,
+        ship: selectedShip().id,
+        bossesDefeated: game.stats.bossesDefeated,
+        reachedStage: game.stats.reachedStage,
+        loop: game.loop,
+        damageTaken: game.stats.damageTaken,
+        bombsUsed: game.stats.bombsUsed,
+        grazes: game.combat.grazes,
+        maxCombo: game.combat.maxCombo,
+        activations: game.combat.activations,
+        clear
+      };
+    }
+
+    function archiveRankedRun(clear = false) {
+      if (!modes.ranked(game.mode) || game.resultGrade) return;
+      const summary = rankedRunSummary(clear);
+      game.resultGrade = records.grade(game.mode, summary, clear);
+      summary.grade = game.resultGrade;
+      game.newBadges = recordStore.unlock(summary, {rushClear:game.mode === "bossRush" && clear});
+      recordStore.add(summary);
+    }
+
+    function openLocalRecords() {
+      game.state = "RECORDS";
+      sfx("select");
+    }
+
     function stageDef() {
       return stages[game.stageIndex];
     }
@@ -962,6 +1001,8 @@ const W = 1280;
         highScore: highScore(),
         mode: "classic",
         trainingRounds: 0,
+        resultGrade: null,
+        newBadges: [],
         combat: combatRules.createState(),
         missileSequence: 0,
         enemySequence: 0,
@@ -1192,11 +1233,15 @@ const W = 1280;
       else if (game.state === "ENDING") {
         game.state = "PLAYING";
         finishBossReward();
+      } else if (game.state === "RECORDS") {
+        returnToTitle();
       }
     }
 
     function gameOver() {
+      if (game.state === "GAME_OVER" || game.state === "RUSH_CLEAR") return;
       game.highScore = saveModeHighScore(game.mode, game.score);
+      archiveRankedRun(false);
       game.state = "GAME_OVER";
       game.transition = 0;
       game.enemies.length = 0;
@@ -1263,6 +1308,7 @@ const W = 1280;
       const rightDown = controller.pressed(pad, 15) || (pad.axes?.[0] || 0) > 0.45;
       const aDown = controller.pressed(pad, 0);
       const bDown = controller.pressed(pad, 1);
+      const xDown = controller.pressed(pad, 2);
       const lbDown = controller.pressed(pad, 4);
       const rbDown = controller.pressed(pad, 5);
       const bombDown = controller.pressed(pad, settings.bombButton);
@@ -1271,7 +1317,7 @@ const W = 1280;
 
       if (anyDown && !gamepadEdge.any) unlockAudio();
 
-      if ((game.state === "GAME_OVER" || game.state === "RUSH_CLEAR") &&
+      if ((game.state === "GAME_OVER" || game.state === "RUSH_CLEAR" || game.state === "RECORDS") &&
           startDown && !gamepadEdge.start) {
         returnToTitle();
       } else if (game.state === "PAUSED") {
@@ -1285,6 +1331,8 @@ const W = 1280;
         // Physical B always confirms menus, irrespective of combat remapping.
         if (bDown && !gamepadEdge.b) activatePauseItem();
       } else {
+        // Physical X opens the local hangar from the title, without entering combat.
+        if (game.state === "TITLE" && xDown && !gamepadEdge.x) openLocalRecords();
         // Start / Select remain system keys. Combat fire and bomb are configurable.
         if (startDown && !gamepadEdge.start) handleStartButton();
         if (selectDown && !gamepadEdge.select) toggleFullscreen();
@@ -1309,6 +1357,7 @@ const W = 1280;
       gamepadEdge.right = rightDown;
       gamepadEdge.lb = lbDown;
       gamepadEdge.rb = rbDown;
+      gamepadEdge.x = xDown;
       gamepadEdge.a = aDown;
       gamepadEdge.b = bDown;
       gamepadEdge.bomb = bombDown;
@@ -2772,6 +2821,7 @@ const W = 1280;
 
       if (game.mode === "bossRush" && game.pendingStageAdvance.kind === "complete") {
         game.highScore = saveModeHighScore(game.mode, game.score);
+        archiveRankedRun(true);
         game.pendingStageAdvance = null;
         game.state = "RUSH_CLEAR";
         game.stageMode = "COMPLETE";
@@ -2796,6 +2846,7 @@ const W = 1280;
           game.pendingStageAdvance.loop === 2) {
         game.firstClearAcknowledged = true;
         game.highScore = saveHighScore(game.score);
+        game.newBadges = recordStore.unlock(rankedRunSummary(true), {firstClear:true});
         game.state = "ENDING";
         stopBgm();
         showMessage("ALL FIVE STAGES CLEAR", 2);
@@ -3272,7 +3323,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v26.0", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v26.1", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -3283,6 +3334,7 @@ const W = 1280;
       drawText("PRESS START / ENTER", W / 2, 662, 28, "center", "#fff4b7");
       drawText("CLASSIC ARCADE  /  BOSS RUSH  /  TRAINING", W / 2, 760, 23, "center", "rgba(231,251,255,.86)");
       drawText("CHOOSE A MODE AND FIGHTER AFTER PRESSING START", W / 2, 809, 19, "center", "#8ef7ff");
+      drawText("H / GAMEPAD X: LOCAL RECORDS AND ACHIEVEMENTS", W / 2, 862, 20, "center", "#fff4b7");
     }
 
     function drawShipPreview(ship, x, y, scale = 1.4, selected = false) {
@@ -3379,7 +3431,8 @@ const W = 1280;
 
       drawText("LOOP 2 AWAITS - ENEMIES BECOME STRONGER", W / 2, 741, 26, "center", "#e7fbff");
       drawText("PRESS START / ENTER TO CONTINUE", W / 2, 805, 27, "center", "#8ef7ff");
-      drawText("OR CLOSE THE GAME - YOUR HIGH SCORE IS SAVED", W / 2, 856, 17, "center", "#b4c7dc");
+      drawText(`ACHIEVEMENTS UNLOCKED ${game.newBadges.length}`, W / 2, 854, 18, "center", "#fff4b7");
+      drawText("YOUR HIGH SCORE IS SAVED LOCALLY", W / 2, 899, 17, "center", "#b4c7dc");
     }
 
     function drawBossRushClearScreen() {
@@ -3412,8 +3465,64 @@ const W = 1280;
       drawText(`MAX CHAIN ${game.combat.maxCombo}   GRAZES ${game.combat.grazes}   BOMBS ${game.stats.bombsUsed}`,
         W / 2, 648, 21, "center", "#e7fbff");
 
+      drawText(`GRADE ${game.resultGrade || "C"}   /   NEW ACHIEVEMENTS ${game.newBadges.length}`,
+        W / 2, 709, 25, "center", "#fff4b7");
       drawText("RUN RECORDED  /  NO WAVES REQUIRED", W / 2, 751, 26, "center", "#e7fbff");
       drawText("PRESS START / ENTER TO RETURN TO TITLE", W / 2, 823, 24, "center", "#8ef7ff");
+    }
+
+    function drawLocalRecordsScreen() {
+      drawBackground(0);
+      ctx.fillStyle = "rgba(3, 7, 22, .88)";
+      ctx.fillRect(0, 0, W, H);
+
+      drawText("LOCAL HANGAR RECORDS", W / 2, 116, 55, "center", "#e7fbff");
+      drawText("DEVICE ONLY  /  NO ACCOUNTS  /  TOP FIVE RANKED RUNS", W / 2, 167, 20, "center", "#8ef7ff");
+
+      const columns = [
+        { mode: "classic", heading: "CLASSIC ARCADE", x: 74 },
+        { mode: "bossRush", heading: "BOSS RUSH", x: 660 }
+      ];
+      for (const column of columns) {
+        ctx.fillStyle = "rgba(6, 24, 47, .78)";
+        ctx.fillRect(column.x, 211, 547, 343);
+        ctx.strokeStyle = "rgba(142,247,255,.58)";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(column.x, 211, 547, 343);
+        drawText(column.heading, column.x + 24, 246, 27, "left", "#fff4b7");
+
+        const entries = recordStore.top(column.mode);
+        if (!entries.length) {
+          drawText("NO RANKED RUNS YET", column.x + 28, 341, 22, "left", "#9ab0d0");
+        } else {
+          for (let i = 0; i < entries.length; i++) {
+            const entry = entries[i];
+            const ship = entry.ship === "falcon" ? "FALCON" : "VANGUARD";
+            const rowY = 297 + i * 50;
+            ctx.fillStyle = i % 2 ? "rgba(255,255,255,.04)" : "rgba(255,255,255,.075)";
+            ctx.fillRect(column.x + 15, rowY - 21, 517, 43);
+            drawText(`${i + 1}. ${String(entry.score).padStart(6,"0")}`,
+              column.x + 28, rowY, 24, "left", "#e7fbff");
+            drawText(`${entry.grade} / ${ship}`, column.x + 515, rowY, 19, "right", "#8ef7ff");
+          }
+        }
+      }
+
+      const badges = recordStore.achievements();
+      const unlocked = badges.filter(b=>b.unlocked).length;
+      ctx.fillStyle = "rgba(6, 24, 47, .78)";
+      ctx.fillRect(74, 583, 1133, 251);
+      ctx.strokeStyle = "rgba(142,247,255,.48)";
+      ctx.strokeRect(74, 583, 1133, 251);
+      drawText(`ACHIEVEMENTS ${unlocked} / ${badges.length}`, 100, 616, 28, "left", "#fff4b7");
+      for (let i = 0; i < badges.length; i++) {
+        const b = badges[i];
+        const col = Math.floor(i / 4), row = i % 4;
+        drawText((b.unlocked ? "★  " : "○  ") + b.title,
+          107 + col * 552, 665 + row * 45, 22, "left", b.unlocked ? "#8ef7ff" : "#6b8099");
+      }
+
+      drawText("PRESS START / ENTER / H TO RETURN", W / 2, 900, 22, "center", "#e7fbff");
     }
 
     function drawGameOverScreen(dt) {
@@ -3477,8 +3586,8 @@ const W = 1280;
       drawText("DAMAGE", rightX, rowY + rowGap * 2, 21, "left", labelColor);
       drawText(String(game.stats.damageTaken), rightX + 220, rowY + rowGap * 2, 22, "left", "#ff8aa7");
 
-      drawText(`GRAZES ${game.combat.grazes}   MAX CHAIN ${game.combat.maxCombo}   OVERDRIVES ${game.combat.activations}`,
-        W / 2, cardY + 361, 20, "center", "#8ef7ff");
+      drawText(`GRADE ${game.resultGrade || "C"}   GRAZES ${game.combat.grazes}   MAX CHAIN ${game.combat.maxCombo}   OVERDRIVES ${game.combat.activations}`,
+        W / 2, cardY + 361, 19, "center", "#8ef7ff");
       drawText("PRESS START / ENTER TO TITLE", W / 2, cardY + cardH - 44, 24, "center", "rgba(231,251,255,.82)");
     }
 
@@ -3519,6 +3628,12 @@ const W = 1280;
 
       if (game.state === "RUSH_CLEAR") {
         drawBossRushClearScreen();
+        ctx.restore();
+        return;
+      }
+
+      if (game.state === "RECORDS") {
+        drawLocalRecordsScreen();
         ctx.restore();
         return;
       }
@@ -3601,6 +3716,14 @@ const W = 1280;
         return;
       }
 
+      if (game.state === "RECORDS") {
+        if (["Enter","NumpadEnter","Space","Escape","KeyH"].includes(e.code) && !e.repeat) {
+          e.preventDefault();
+          returnToTitle();
+        }
+        return;
+      }
+
       if (game.state === "ENDING") {
         if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") {
           e.preventDefault();
@@ -3613,6 +3736,11 @@ const W = 1280;
       keys[e.code] = true;
 
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
+
+      if (game.state === "TITLE" && e.code === "KeyH") {
+        if (freshPress) openLocalRecords();
+        return;
+      }
 
       if (game.state === "TITLE" && (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space" || e.code === "KeyJ")) {
         handleStartButton();

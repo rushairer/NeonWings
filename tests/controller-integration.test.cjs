@@ -11,6 +11,7 @@ const enemyBehaviors = require("../src/enemy-behaviors.js");
 const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
 const modes = require("../src/modes.js");
+const records = require("../src/records.js");
 const source = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
 function makePad(index = 0) {
@@ -31,7 +32,7 @@ function boot(storage = new Map()) {
   const canvas = { style: {}, getContext: () => ({}) };
   const window = {
     innerWidth: 1280, innerHeight: 960,
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records,
     addEventListener: (event, callback) => listeners.set(event, callback)
   };
   const document = {
@@ -207,5 +208,17 @@ test("gamepad Start closes completed Boss Rush result and returns to menu", () =
   const app=boot();
   app.eval('menu.selectedMode="bossRush";startSelectedGame();game.state="RUSH_CLEAR"');
   press(app.pad,9,true);app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.state"),"TITLE");
+});
+
+test("physical X opens local records from the title and Start safely closes it", () => {
+  const app=boot();
+  press(app.pad,2,true);
+  app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.state"),"RECORDS");
+  press(app.pad,2,false);
+  app.eval("pollGamepadSystemButtons()");
+  press(app.pad,9,true);
+  app.eval("pollGamepadSystemButtons()");
   assert.equal(app.eval("game.state"),"TITLE");
 });

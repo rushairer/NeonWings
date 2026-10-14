@@ -20,6 +20,10 @@
     const n = Number(value);
     return Number.isFinite(n) && n > 0 ? Math.min(999999999, Math.floor(n)) : 0;
   };
+  const safeDate = value => {
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? Math.min(Number.MAX_SAFE_INTEGER, Math.floor(n)) : 0;
+  };
   const ranked = id => MODES.includes(id);
   function grade(mode, run, clear = false) {
     if (!ranked(mode)) return "PRACTICE";
@@ -48,7 +52,7 @@
       ship: entry.ship === "vanguard" ? "vanguard" : "falcon",
       bossesDefeated: finiteInteger(entry.bossesDefeated),
       reachedStage: finiteInteger(entry.reachedStage),
-      date: finiteInteger(entry.date)
+      date: safeDate(entry.date)
     };
   }
 

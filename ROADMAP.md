@@ -45,7 +45,7 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Boss Rush: five real Bosses in sequence, differentiated clear / Game Over, and separate local best score
 - [x] Training: selectable stage, ten-kill Boss drills, full-health equipment reset, unranked free play
 - [ ] Mission mode and tailored completion objectives
-- [ ] Local achievements, run grades and per-mode leaderboard history
+- [x] Separate local Classic/Boss Rush top-five history, run grades (S/A/B/C) and eight persistent milestone badges; Training is unranked
 - [ ] Daily seeded challenge; deterministic combat RNG separate from rendering; replay-compatible fixed-tick simulation still pending
 - [ ] Device/browser acceptance for mode menus and full five-Boss run
 

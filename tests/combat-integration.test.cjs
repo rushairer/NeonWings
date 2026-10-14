@@ -11,6 +11,7 @@ const enemyBehaviors = require("../src/enemy-behaviors.js");
 const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
 const modes = require("../src/modes.js");
+const records = require("../src/records.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -30,7 +31,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -551,4 +552,62 @@ test("Classic first-clear epilogue is unchanged when selecting Classic explicitl
   app.events.get("keydown")({code:"Enter",repeat:false,preventDefault(){}});
   assert.equal(app.eval("game.loop"),2);
   assert.equal(app.eval("game.stageIndex"),0);
+});
+
+test("Classic Game Over writes one graded ranked run to Classic-only local Top Five", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="classic";startSelectedGame();game.score=500;game.stats.reachedStage=3;gameOver()');
+  assert.equal(app.eval("game.resultGrade"),"B");
+  assert.equal(app.eval('recordStore.top("classic").length'),1);
+  assert.equal(app.eval('recordStore.top("classic")[0].score'),500);
+  assert.equal(app.eval('recordStore.top("bossRush").length'),0);
+  assert.equal(app.eval('recordStore.achievements().filter(b=>b.unlocked).length'),1);
+  app.eval("drawFrame(.016)");
+});
+
+test("Boss Rush clear persists a grade and flawless-clear achievements", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="bossRush";startSelectedGame();game.score=9000;game.stats.bossesDefeated=5;game.stats.damageTaken=0;game.pendingStageAdvance={kind:"complete",stageIndex:4,loop:1,text:"CLEAR"};finishBossReward()');
+  assert.equal(app.eval("game.state"),"RUSH_CLEAR");
+  assert.equal(app.eval("game.resultGrade"),"S");
+  assert.equal(app.eval('recordStore.top("bossRush").length'),1);
+  assert.equal(app.eval('recordStore.top("bossRush")[0].grade'),"S");
+  assert.equal(app.eval('recordStore.achievements().find(b=>b.id==="untouchable").unlocked'),true);
+  assert.equal(app.eval('recordStore.achievements().find(b=>b.id==="titanSlayer").unlocked'),true);
+  app.eval("drawFrame(.016)");
+});
+
+test("First Classic clear unlocks FIRST DAWN without adding an incomplete Top Five record", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="classic";startSelectedGame();game.stageIndex=4;game.stats.reachedStage=5;game.pendingStageAdvance={kind:"advance",stageIndex:0,loop:2,text:"LOOP 2"};finishBossReward()');
+  assert.equal(app.eval("game.state"),"ENDING");
+  assert.equal(app.eval('recordStore.top("classic").length'),0);
+  assert.equal(app.eval('recordStore.achievements().find(b=>b.id==="firstDawn").unlocked'),true);
+});
+
+test("Training can never write Top Five history or farm permanent achievements", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="training";startSelectedGame();game.score=99999;game.stats.bossesDefeated=5;game.combat.grazes=100;game.combat.maxCombo=40');
+  assert.equal(app.eval('archiveRankedRun(true)'),undefined);
+  assert.equal(app.eval('recordStore.top("classic").length'),0);
+  assert.equal(app.eval('recordStore.top("bossRush").length'),0);
+  assert.equal(app.eval('recordStore.achievements().filter(b=>b.unlocked).length'),0);
+});
+
+test("Local records screen opens with H, renders and closes using Enter", () => {
+  const app=boot();
+  app.events.get("keydown")({code:"KeyH",repeat:false,preventDefault(){}});
+  assert.equal(app.eval("game.state"),"RECORDS");
+  app.eval("drawFrame(.016)");
+  app.events.get("keyup")({code:"KeyH"});
+  app.events.get("keydown")({code:"Enter",repeat:false,preventDefault(){}});
+  assert.equal(app.eval("game.state"),"TITLE");
+});
+
+test("Records remain in memory if browser localStorage writes are unavailable", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="classic";startSelectedGame();game.score=200;gameOver()');
+  assert.equal(app.eval('recordStore.top("classic").length'),1);
+  app.eval('returnToTitle()');
+  assert.equal(app.eval('recordStore.top("classic")[0].score'),200);
 });
