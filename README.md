@@ -15,6 +15,7 @@ A controller-first, five-stage, side-scrolling neon arcade shooter built with br
 - v25 first pass: shield enemies protect their front until shield energy is broken; splitters release two small drones on destruction; carriers visibly telegraph and launch a limited number of escorts
 - v25 arenas: five different procedural backdrops and timed, telegraphed hazards; warnings indicate the future danger zone before it can hurt the player
 - v25.1 Boss dismantling: shoot either visible cannon mount to disable it; destroyed turrets reduce the Boss attack density/rate; clearing the fifth stage for the first time awards a pauseable victory epilogue before optional Loop 2
+- v26 preview: select Classic, Boss Rush, or Training during fighter selection; Boss Rush has its own high score while Training never writes ranked scores
 
 ## Run
 
@@ -95,6 +96,22 @@ Each of the five bosses now has **two visible, player-facing turrets** with indi
 After **Stage 5 is cleared for the first time in Loop 1**, the game shows a victory epilogue with the run score and combat stats. This is an explicit, non-timed intermission: the high score is saved and no enemies or danger timers advance. **Start or Enter** begins Loop 2. Later loops do not repeat the epilogue.
 
 These improvements are validated by deterministic rules and mocked-canvas integration tests. In-game appearance and device performance still need visual and handheld verification.
+
+## Arcade Universe game modes (v26)
+
+Press Start / Enter at the title screen to choose a fighter **and a mode**. Use **Up/Down** to select Classic, Boss Rush, or Training, and Left/Right to switch between Falcon and Vanguard. On a controller use the D-pad; on a keyboard use arrow keys or WASD. In Training, use **LB/RB or Q/E** to choose which of the five stages to practice.
+
+| Mode | Starting equipment | Stage progression | High scores |
+| --- | --- | --- | --- |
+| **Classic Arcade** | Original Level 1 weapon, normal health, 2 Bombs | Original five stages, first-clear epilogue, stronger endless loops | Original Classic local high-score key (unchanged) |
+| **Boss Rush** | Level 2 weapon, normal health, 2 Bombs | Bosses 1–5 back-to-back, with brief reward / transition between fights | Separate local Boss Rush record |
+| **Training** | Level 3 weapon, full HP, 3 Bombs | Select any stage; 10 kills to practice its Boss; repeat the same stage | Unranked: no high-score writes |
+
+**Boss Rush** keeps real Boss phases, destructible weapon mounts and normal damage. The run ends with a dedicated completion screen after all five Bosses, or a Game Over if HP runs out. Use Start / Enter from the result screen to return to the title menu.
+
+**Training** restores full HP and equipment between rounds and revives after losing the last hit point, while preserving visual hit feedback and practice statistics. Pause → Return to Title to exit the drill. Normal enemy combat, hazards and Boss phases remain enabled so that practice has real mechanics.
+
+No online services, accounts, new dependencies or network calls are required. Mission mode, local achievement grades, daily seeded challenges and replay-compatible simulation are **not** yet shipped.
 
 ## GitHub Pages
 

@@ -14,6 +14,8 @@ const W = 1280;
     if (!worlds) throw new Error("NeonWings world runtime missing");
     const bossParts = window.NeonBossParts;
     if (!bossParts) throw new Error("NeonWings boss parts runtime missing");
+    const modes = window.NeonModes;
+    if (!modes) throw new Error("NeonWings arcade-mode runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -39,6 +41,8 @@ const W = 1280;
       down: false,
       left: false,
       right: false,
+      lb: false,
+      rb: false,
       a: false,
       b: false,
       bomb: false,
@@ -172,7 +176,9 @@ const W = 1280;
     ];
 
     let menu = {
-      selectedShip: 0
+      selectedShip: 0,
+      selectedMode: "classic",
+      trainingStage: 0
     };
 
     function selectedShip() {
@@ -905,6 +911,31 @@ const W = 1280;
       return best;
     }
 
+    // Keep Classic's historical leaderboard key unchanged.
+    const BOSS_RUSH_HIGH_SCORE_KEY = "neon_wings_boss_rush_best_v26";
+    let cachedBossRushBest = 0;
+
+    function modeHighScore(modeId) {
+      if (modeId === "classic") return highScore();
+      if (!modes.ranked(modeId)) return 0;
+      try {
+        const raw = Number(localStorage.getItem(BOSS_RUSH_HIGH_SCORE_KEY) || 0);
+        if (Number.isFinite(raw) && raw >= 0) cachedBossRushBest = Math.max(cachedBossRushBest, raw);
+      } catch (_) {
+        // Private browsing or disabled storage must not block a run.
+      }
+      return cachedBossRushBest;
+    }
+
+    function saveModeHighScore(modeId, score) {
+      if (modeId === "classic") return saveHighScore(score);
+      if (!modes.ranked(modeId)) return 0;
+      cachedBossRushBest = Math.max(modeHighScore(modeId), Math.max(0, Math.round(score)));
+      try { localStorage.setItem(BOSS_RUSH_HIGH_SCORE_KEY, String(cachedBossRushBest)); }
+      catch (_) {}
+      return cachedBossRushBest;
+    }
+
     function stageDef() {
       return stages[game.stageIndex];
     }
@@ -914,7 +945,7 @@ const W = 1280;
     }
 
     function killTarget() {
-      return stageDef().kills + (game.loop - 1) * 8;
+      return modes.waveTarget(game.mode, stageDef().kills + (game.loop - 1) * 8);
     }
 
     function newGame() {
@@ -929,6 +960,8 @@ const W = 1280;
 
         score: 0,
         highScore: highScore(),
+        mode: "classic",
+        trainingRounds: 0,
         combat: combatRules.createState(),
         missileSequence: 0,
         enemySequence: 0,
@@ -936,6 +969,8 @@ const W = 1280;
         firstClearAcknowledged: false,
         stats: {
           kills: 0,
+          bossesDefeated: 0,
+          trainingResets: 0,
           bombsUsed: 0,
           maxWeaponLevel: 1,
           damageTaken: 0,
@@ -1081,10 +1116,29 @@ const W = 1280;
       unlockAudio();
       sfx("confirm");
       game = newGame();
+      const setup = modes.initialSetup(
+        menu.selectedMode, menu.trainingStage, game.hp, game.hpMax
+      );
+      game.mode = setup.mode;
+      game.stageIndex = setup.stageIndex;
+      // spawnBoss only starts from a wave or transition, so prepare before entering BOSS.
+      game.stageMode = setup.mode === "bossRush" ? "WAVE" : setup.stageMode;
+      game.world = worlds.createState(game.stageIndex);
+      game.hp = setup.hp;
+      game.bomb = setup.bomb;
+      game.weaponLevel = setup.weaponLevel;
+      game.weaponType = setup.weaponType;
+      game.stats.maxWeaponLevel = setup.weaponLevel;
+      game.stats.reachedStage = game.stageIndex + 1;
+      game.highScore = modeHighScore(game.mode);
       game.state = "PLAYING";
+      if (game.mode === "bossRush") {
+        // Boss-only sequence: no wave spawner is ever entered.
+        spawnBoss();
+      }
       audioEnabled = true;
       startBgm();
-      showMessage(`${selectedShip().name} LAUNCH`, 1.3);
+      showMessage(`${selectedShip().name} / ${modes.modeById(game.mode).name}`, 1.5);
     }
 
     function returnToTitle() {
@@ -1100,6 +1154,20 @@ const W = 1280;
       menu.selectedShip = (menu.selectedShip + dir + ships.length) % ships.length;
       sfx("select");
       showMessage(selectedShip().name, 0.8);
+    }
+
+    function cycleMode(dir) {
+      unlockAudio();
+      menu.selectedMode = modes.cycleMode(menu.selectedMode, dir);
+      sfx("select");
+      showMessage(modes.modeById(menu.selectedMode).name, 0.9);
+    }
+
+    function cycleTrainingStage(dir) {
+      if (menu.selectedMode !== "training") return;
+      menu.trainingStage = modes.cycleStage(menu.trainingStage, dir);
+      sfx("select");
+      showMessage(stages[menu.trainingStage].short + " PRACTICE", 0.9);
     }
 
     async function toggleFullscreen() {
@@ -1128,7 +1196,7 @@ const W = 1280;
     }
 
     function gameOver() {
-      game.highScore = saveHighScore(game.score);
+      game.highScore = saveModeHighScore(game.mode, game.score);
       game.state = "GAME_OVER";
       game.transition = 0;
       game.enemies.length = 0;
@@ -1195,13 +1263,16 @@ const W = 1280;
       const rightDown = controller.pressed(pad, 15) || (pad.axes?.[0] || 0) > 0.45;
       const aDown = controller.pressed(pad, 0);
       const bDown = controller.pressed(pad, 1);
+      const lbDown = controller.pressed(pad, 4);
+      const rbDown = controller.pressed(pad, 5);
       const bombDown = controller.pressed(pad, settings.bombButton);
       const overdriveDown = controller.pressed(pad, settings.overdriveButton);
       const anyDown = controller.anyPressed(pad);
 
       if (anyDown && !gamepadEdge.any) unlockAudio();
 
-      if (game.state === "GAME_OVER" && startDown && !gamepadEdge.start) {
+      if ((game.state === "GAME_OVER" || game.state === "RUSH_CLEAR") &&
+          startDown && !gamepadEdge.start) {
         returnToTitle();
       } else if (game.state === "PAUSED") {
         if (startDown && !gamepadEdge.start) resumeGame();
@@ -1223,6 +1294,10 @@ const W = 1280;
         if (game.state === "SELECT") {
           if (leftDown && !gamepadEdge.left) cycleShip(-1);
           if (rightDown && !gamepadEdge.right) cycleShip(1);
+          if (upDown && !gamepadEdge.up) cycleMode(-1);
+          if (downDown && !gamepadEdge.down) cycleMode(1);
+          if (lbDown && !gamepadEdge.lb) cycleTrainingStage(-1);
+          if (rbDown && !gamepadEdge.rb) cycleTrainingStage(1);
         }
       }
 
@@ -1232,6 +1307,8 @@ const W = 1280;
       gamepadEdge.down = downDown;
       gamepadEdge.left = leftDown;
       gamepadEdge.right = rightDown;
+      gamepadEdge.lb = lbDown;
+      gamepadEdge.rb = rbDown;
       gamepadEdge.a = aDown;
       gamepadEdge.b = bDown;
       gamepadEdge.bomb = bombDown;
@@ -2232,18 +2309,16 @@ const W = 1280;
       // It appears in the active play area and drifts left like P / +HP.
       spawnPowerup(W - 300, H / 2, "BOMB");
 
-      if (game.stageIndex >= stages.length - 1) {
-        game.pendingStageAdvance = {
-          loop: game.loop + 1,
-          stageIndex: 0,
-          text: `5 STAGES CLEAR  /  LOOP ${game.loop + 1} START`
-        };
-      } else {
-        game.pendingStageAdvance = {
-          loop: game.loop,
-          stageIndex: game.stageIndex + 1,
-          text: `STAGE CLEAR  /  NEXT: ${stages[game.stageIndex + 1].short}`
-        };
+      game.stats.bossesDefeated += 1;
+      const next = modes.nextAfterBoss(
+        game.mode, game.stageIndex, game.loop, stages.length, menu.trainingStage
+      );
+      game.pendingStageAdvance = next;
+      if (game.mode === "classic") {
+        // Keep original classic stage banner wording.
+        game.pendingStageAdvance.text = next.stageIndex === 0
+          ? `5 STAGES CLEAR  /  LOOP ${next.loop} START`
+          : `STAGE CLEAR  /  NEXT: ${stages[next.stageIndex].short}`;
       }
 
       game.stageMode = "BOSS_REWARD";
@@ -2550,7 +2625,22 @@ const W = 1280;
 
       for (let i = 0; i < 42; i++) addParticle(game.player.x, game.player.y, rand(-300, 230), rand(-245, 245), rand(0.3, 0.9), i % 2 ? "#d8fbff" : "#ff6b5a");
 
-      if (game.hp <= 0) gameOver();
+      if (game.hp <= 0) {
+        if (game.mode === "training") {
+          // Infinite lives for drills, but keep real hit feedback and stats.
+          game.stats.trainingResets += 1;
+          game.hp = game.hpMax;
+          game.invuln = 2.5;
+          game.bomb = game.bombMax;
+          game.weaponLevel = 3;
+          game.combat = combatRules.createState();
+          game.player.x = 175;
+          game.player.y = H / 2;
+          showMessage("TRAINING RESET - CONTINUE PRACTICING", 1.6);
+        } else {
+          gameOver();
+        }
+      }
     }
 
     function readInput(dt) {
@@ -2680,6 +2770,27 @@ const W = 1280;
     function finishBossReward() {
       if (!game.pendingStageAdvance) return;
 
+      if (game.mode === "bossRush" && game.pendingStageAdvance.kind === "complete") {
+        game.highScore = saveModeHighScore(game.mode, game.score);
+        game.pendingStageAdvance = null;
+        game.state = "RUSH_CLEAR";
+        game.stageMode = "COMPLETE";
+        stopBgm();
+        showMessage("ALL FIVE BOSSES DEFEATED", 2);
+        return;
+      }
+
+      if (game.mode === "training") {
+        // Each practice round repeats the selected stage; restore practice equipment.
+        game.trainingRounds += 1;
+        game.hp = game.hpMax;
+        game.bomb = game.bombMax;
+        game.weaponLevel = 3;
+        game.weaponType = "blue";
+        game.invuln = 2.5;
+        game.combat = combatRules.createState();
+      }
+
       // First five-stage clear earns a proper ending screen, but never breaks the arcade loop.
       if (!game.firstClearAcknowledged && game.loop === 1 && game.stageIndex === stages.length - 1 &&
           game.pendingStageAdvance.loop === 2) {
@@ -2726,8 +2837,15 @@ const W = 1280;
         if (game.transition <= 0) {
           game.stageMode = "WAVE";
           game.stageIntro = 2.4;
-          startBgm();
-          showMessage(`${stageDef().name}  /  LOOP ${game.loop}`, 2.0);
+          if (game.mode === "bossRush") {
+            spawnBoss();
+            showMessage(`BOSS ${game.stageIndex + 1} / ${stages.length}  -  INCOMING`, 2.0);
+          } else {
+            startBgm();
+            showMessage(game.mode === "training"
+              ? `TRAINING ${stageDef().short}  /  ROUND ${game.trainingRounds + 1}`
+              : `${stageDef().name}  /  LOOP ${game.loop}`, 2.0);
+          }
         }
         updateParticles(dt);
         return;
@@ -3000,7 +3118,8 @@ const W = 1280;
       ctx.fillStyle = "rgba(0,0,0,.36)";
       ctx.fillRect(24, 22, 590, 78);
       drawText(`SCORE ${String(game.score).padStart(6, "0")}`, 44, 50, 26);
-      drawText(`HI ${String(game.highScore).padStart(6, "0")}`, 44, 80, 21, "left", "#fff4b7");
+      drawText(game.mode === "training" ? "FREE PLAY  /  NO RANK" :
+        `HI ${String(game.highScore).padStart(6, "0")}`, 44, 80, 21, "left", "#fff4b7");
       drawText("HP", 316, 64, 25, "left", "#e7fbff");
       drawHpParallelograms(360, 53, Math.max(0, game.hp), Math.max(0, game.hpMax));
 
@@ -3011,7 +3130,9 @@ const W = 1280;
 
       ctx.fillStyle = "rgba(0,0,0,.30)";
       ctx.fillRect(978, 22, 278, 78);
-      drawText(`LOOP ${game.loop}`, 1002, 50, 23, "left", "#e7fbff");
+      drawText(game.mode === "bossRush" ? "BOSS RUSH" :
+        game.mode === "training" ? `TRAINING ${game.trainingRounds + 1}` :
+        `LOOP ${game.loop}`, 1002, 50, 22, "left", "#e7fbff");
       drawText(`STAGE ${game.stageIndex + 1} / 5`, 1002, 80, 23, "left", "#e7fbff");
 
       if (game.stageMode === "WAVE") {
@@ -3050,7 +3171,10 @@ const W = 1280;
         ctx.fillStyle = "rgba(0,0,0,.42)";
         ctx.fillRect(W / 2 - 360, H / 2 - 60, 720, 120);
         drawText(`${stageDef().name}`, W / 2, H / 2 - 14, 34, "center", stageDef().grid);
-        drawText(`LOOP ${game.loop}  /  ENEMY COUNT ${killTarget()}`, W / 2, H / 2 + 34, 24, "center", "#e7fbff");
+        drawText(game.mode === "training" ?
+          `PRACTICE ROUND ${game.trainingRounds + 1}  /  ${killTarget()} KILLS TO BOSS` :
+          `LOOP ${game.loop}  /  ENEMY COUNT ${killTarget()}`,
+          W / 2, H / 2 + 34, 24, "center", "#e7fbff");
       }
 
       if (game.stageMode === "BOSS_REWARD") {
@@ -3148,7 +3272,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v25.1", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v26.0", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -3157,7 +3281,8 @@ const W = 1280;
       ctx.fillStyle = "rgba(0,0,0,.34)";
       ctx.fillRect(W / 2 - 360, 625, 720, 72);
       drawText("PRESS START / ENTER", W / 2, 662, 28, "center", "#fff4b7");
-      drawText("NEON OVERDRIVE  /  GRAZE TO CHARGE  /  Y OR C TO ACTIVATE", W / 2, 760, 22, "center", "rgba(231,251,255,.78)");
+      drawText("CLASSIC ARCADE  /  BOSS RUSH  /  TRAINING", W / 2, 760, 23, "center", "rgba(231,251,255,.86)");
+      drawText("CHOOSE A MODE AND FIGHTER AFTER PRESSING START", W / 2, 809, 19, "center", "#8ef7ff");
     }
 
     function drawShipPreview(ship, x, y, scale = 1.4, selected = false) {
@@ -3181,8 +3306,21 @@ const W = 1280;
     function drawSelectScreen(dt) {
       drawBackground(dt);
 
-      drawText("SELECT FIGHTER", W / 2, 150, 66, "center", "#e7fbff");
-      drawText("左右切换战机，按 START / ENTER 开始", W / 2, 210, 24, "center", "rgba(231,251,255,.78)");
+      drawText("SELECT FIGHTER & MODE", W / 2, 132, 59, "center", "#e7fbff");
+      drawText("LEFT / RIGHT: SHIP    UP / DOWN: MODE    START / ENTER: LAUNCH",
+        W / 2, 195, 22, "center", "rgba(231,251,255,.78)");
+      const modeDef = modes.modeById(menu.selectedMode);
+      ctx.fillStyle = "rgba(3, 12, 33, .72)";
+      ctx.fillRect(W / 2 - 425, 227, 850, 99);
+      ctx.strokeStyle = "#38e8ff";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(W / 2 - 425, 227, 850, 99);
+      drawText(`<  ${modeDef.name}  >`, W / 2, 254, 31, "center", "#fff4b7");
+      drawText(modeDef.description, W / 2, 294, 20, "center", "#8ef7ff");
+      if (menu.selectedMode === "training") {
+        drawText(`Q / E OR LB / RB: PRACTICE ${menu.trainingStage + 1} - ${stages[menu.trainingStage].short}`,
+          W / 2, 348, 20, "center", "#fff4b7");
+      }
 
       const leftSelected = menu.selectedShip === 0;
       drawShipPreview(ships[0], W / 2 - 255, 455, leftSelected ? 1.55 : 1.32, leftSelected);
@@ -3198,6 +3336,12 @@ const W = 1280;
         ? "SPEED HIGH    HITBOX SMALL    HP 3/5"
         : "SPEED MEDIUM    ARMOR HIGH    HP 4/6";
       drawText(stat, W / 2, 832, 20, "center", "rgba(231,251,255,.75)");
+      if (menu.selectedMode !== "training") {
+        drawText(`MODE BEST ${String(modeHighScore(menu.selectedMode)).padStart(6,"0")}`,
+          W / 2, 878, 21, "center", "#fff4b7");
+      } else {
+        drawText("PRACTICE ONLY  /  NO SCORE RANKING", W / 2, 878, 21, "center", "#fff4b7");
+      }
     }
 
     function drawFirstClearEnding() {
@@ -3238,6 +3382,40 @@ const W = 1280;
       drawText("OR CLOSE THE GAME - YOUR HIGH SCORE IS SAVED", W / 2, 856, 17, "center", "#b4c7dc");
     }
 
+    function drawBossRushClearScreen() {
+      drawBackground(0);
+      ctx.fillStyle = "rgba(2, 7, 20, .86)";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.save();
+      ctx.translate(W / 2, 290);
+      ctx.strokeStyle = "#fff4b7";
+      ctx.shadowColor = "#d79aff";
+      ctx.shadowBlur = 34;
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 380, 158, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+
+      drawText("BOSS RUSH", W / 2, 250, 75, "center", "#fff4b7");
+      drawText("COMPLETE", W / 2, 335, 56, "center", "#8ef7ff");
+      drawText("FIVE WEAPONIZED TITANS DEFEATED", W / 2, 423, 27, "center", "#e7fbff");
+
+      ctx.fillStyle = "rgba(8, 19, 46, .76)";
+      ctx.fillRect(224, 482, 832, 203);
+      ctx.strokeStyle = "rgba(142,247,255,.58)";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(224, 482, 832, 203);
+      drawText(`SCORE  ${String(game.score).padStart(6,"0")}`, W / 2, 527, 32, "center", "#fff4b7");
+      drawText(`BEST  ${String(game.highScore).padStart(6,"0")}`, W / 2, 583, 30, "center", "#8ef7ff");
+      drawText(`MAX CHAIN ${game.combat.maxCombo}   GRAZES ${game.combat.grazes}   BOMBS ${game.stats.bombsUsed}`,
+        W / 2, 648, 21, "center", "#e7fbff");
+
+      drawText("RUN RECORDED  /  NO WAVES REQUIRED", W / 2, 751, 26, "center", "#e7fbff");
+      drawText("PRESS START / ENTER TO RETURN TO TITLE", W / 2, 823, 24, "center", "#8ef7ff");
+    }
+
     function drawGameOverScreen(dt) {
       drawBackground(dt);
       updateParticles(dt);
@@ -3258,7 +3436,8 @@ const W = 1280;
       ctx.lineWidth = 3;
       ctx.strokeRect(cardX, cardY, cardW, cardH);
 
-      drawText("GAME OVER", W / 2, cardY + 56, 64, "center", "#ff8aa7");
+      drawText(game.mode === "bossRush" ? "BOSS RUSH OVER" : "GAME OVER",
+        W / 2, cardY + 56, game.mode === "bossRush" ? 54 : 64, "center", "#ff8aa7");
 
       ctx.fillStyle = "rgba(255,255,255,.06)";
       ctx.fillRect(cardX + 48, cardY + 104, cardW - 96, 76);
@@ -3277,8 +3456,11 @@ const W = 1280;
       ctx.fillStyle = "rgba(255,255,255,.045)";
       ctx.fillRect(cardX + 48, cardY + 202, cardW - 96, 146);
 
-      drawText("REACHED", leftX, rowY, 21, "left", labelColor);
-      drawText(`LOOP ${game.stats.reachedLoop} / STAGE ${game.stats.reachedStage}`, leftX + 170, rowY, 22, "left", valueColor);
+      drawText(game.mode === "bossRush" ? "BOSSES" : "REACHED", leftX, rowY, 21, "left", labelColor);
+      drawText(game.mode === "bossRush" ?
+        `${game.stats.bossesDefeated} / ${stages.length}` :
+        `LOOP ${game.stats.reachedLoop} / STAGE ${game.stats.reachedStage}`,
+        leftX + 170, rowY, 22, "left", valueColor);
 
       drawText("KILLS", leftX, rowY + rowGap, 21, "left", labelColor);
       drawText(String(game.stats.kills), leftX + 170, rowY + rowGap, 22, "left", "#8ef7ff");
@@ -3331,6 +3513,12 @@ const W = 1280;
 
       if (game.state === "ENDING") {
         drawFirstClearEnding();
+        ctx.restore();
+        return;
+      }
+
+      if (game.state === "RUSH_CLEAR") {
+        drawBossRushClearScreen();
         ctx.restore();
         return;
       }
@@ -3405,10 +3593,10 @@ const W = 1280;
         return;
       }
 
-      if (game.state === "GAME_OVER") {
-        if (e.code === "Enter" || e.code === "NumpadEnter") {
+      if (game.state === "GAME_OVER" || game.state === "RUSH_CLEAR") {
+        if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space") {
           e.preventDefault();
-          returnToTitle();
+          if (!e.repeat) returnToTitle();
         }
         return;
       }
@@ -3432,8 +3620,13 @@ const W = 1280;
       }
 
       if (game.state === "SELECT") {
+        if (!freshPress) return;
         if (e.code === "ArrowLeft" || e.code === "KeyA") cycleShip(-1);
         if (e.code === "ArrowRight" || e.code === "KeyD") cycleShip(1);
+        if (e.code === "ArrowUp" || e.code === "KeyW") cycleMode(-1);
+        if (e.code === "ArrowDown" || e.code === "KeyS") cycleMode(1);
+        if (e.code === "KeyQ") cycleTrainingStage(-1);
+        if (e.code === "KeyE") cycleTrainingStage(1);
         if (e.code === "Enter" || e.code === "NumpadEnter" || e.code === "Space" || e.code === "KeyJ") handleStartButton();
         return;
       }

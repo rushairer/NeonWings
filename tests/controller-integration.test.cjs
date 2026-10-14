@@ -10,6 +10,7 @@ const collision = require("../src/collision.js");
 const enemyBehaviors = require("../src/enemy-behaviors.js");
 const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
+const modes = require("../src/modes.js");
 const source = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
 function makePad(index = 0) {
@@ -30,7 +31,7 @@ function boot(storage = new Map()) {
   const canvas = { style: {}, getContext: () => ({}) };
   const window = {
     innerWidth: 1280, innerHeight: 960,
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes,
     addEventListener: (event, callback) => listeners.set(event, callback)
   };
   const document = {
@@ -181,4 +182,30 @@ test("keyboard C activates only on new key press", () => {
   app.listeners.get("keyup")({ code: "KeyC" });
   app.listeners.get("keydown")({ code: "KeyC", preventDefault() {} });
   assert.equal(app.eval("game.combat.active"), 6);
+});
+
+test("gamepad D-pad chooses modes; shoulder buttons select training stage", () => {
+  const app=boot();
+  const poll=()=>app.eval("pollGamepadSystemButtons()");
+  press(app.pad,9,true);
+  poll(); press(app.pad,9,false); poll();
+  assert.equal(app.eval("game.state"),"SELECT");
+  press(app.pad,13,true);poll();press(app.pad,13,false);poll();
+  assert.equal(app.eval("menu.selectedMode"),"bossRush");
+  press(app.pad,13,true);poll();press(app.pad,13,false);poll();
+  assert.equal(app.eval("menu.selectedMode"),"training");
+  press(app.pad,5,true);poll();press(app.pad,5,false);poll();
+  assert.equal(app.eval("menu.trainingStage"),1);
+  press(app.pad,4,true);poll();press(app.pad,4,false);poll();
+  assert.equal(app.eval("menu.trainingStage"),0);
+  press(app.pad,9,true);poll();
+  assert.equal(app.eval("game.mode"),"training");
+  assert.equal(app.eval("game.state"),"PLAYING");
+});
+
+test("gamepad Start closes completed Boss Rush result and returns to menu", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="bossRush";startSelectedGame();game.state="RUSH_CLEAR"');
+  press(app.pad,9,true);app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.state"),"TITLE");
 });

@@ -10,6 +10,7 @@ const collision = require("../src/collision.js");
 const enemyBehaviors = require("../src/enemy-behaviors.js");
 const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
+const modes = require("../src/modes.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -29,7 +30,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -437,4 +438,117 @@ test("Boss part-break reward cannot be claimed more than once", () => {
   assert.ok(score>0);
   app.eval(`damageBoss(200,game.boss.x+game.boss.parts[0].x,game.boss.y+game.boss.parts[0].y,"#fff",game.boss.parts[0])`);
   assert.equal(app.eval("game.score"),score);
+});
+
+test("keyboard mode and stage choices lead to a selectable Training run", () => {
+  const app=boot();
+  const press=code=>{
+    app.events.get("keydown")({code,repeat:false,preventDefault(){}});
+    app.events.get("keyup")({code});
+  };
+  press("Enter");
+  assert.equal(app.eval("game.state"),"SELECT");
+  press("ArrowDown");
+  assert.equal(app.eval("menu.selectedMode"),"bossRush");
+  press("ArrowDown");
+  assert.equal(app.eval("menu.selectedMode"),"training");
+  press("KeyE");
+  assert.equal(app.eval("menu.trainingStage"),1);
+  press("ArrowRight");
+  assert.equal(app.eval("menu.selectedShip"),1);
+  press("Enter");
+  assert.equal(app.eval("game.state"),"PLAYING");
+  assert.equal(app.eval("game.mode"),"training");
+  assert.equal(app.eval("game.stageIndex"),1);
+  assert.equal(app.eval("game.hp"),6);
+  assert.equal(app.eval("game.bomb"),3);
+  assert.equal(app.eval("game.weaponLevel"),3);
+  assert.equal(app.eval("killTarget()"),10);
+  app.eval("drawFrame(.016)");
+});
+
+test("Boss Rush begins on Boss 1 without a wave or regular spawn timer", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="bossRush";startSelectedGame()');
+  assert.equal(app.eval("game.mode"),"bossRush");
+  assert.equal(app.eval("game.stageIndex"),0);
+  assert.equal(app.eval("game.stageMode"),"BOSS");
+  assert.equal(app.eval("game.weaponLevel"),2);
+  assert.equal(app.eval("game.boss.parts.length"),2);
+  app.eval("game.spawnTimer=0;updatePlaying(.016)");
+  assert.equal(app.eval("game.enemies.length"),0);
+  assert.equal(app.eval("game.stageMode"),"BOSS");
+});
+
+test("Boss Rush passes through all five bosses and completes without classic ending", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="bossRush";startSelectedGame()');
+  for(let stage=0;stage<5;stage++){
+    assert.equal(app.eval("game.stageIndex"),stage);
+    assert.equal(app.eval("game.boss !== null"),true);
+    app.eval("game.boss.active=true;killBoss()");
+    assert.equal(app.eval("game.stats.bossesDefeated"),stage+1);
+    assert.equal(app.eval("game.stageMode"),"BOSS_REWARD");
+    app.eval("finishBossReward()");
+    if(stage<4){
+      assert.equal(app.eval("game.stageMode"),"TRANSITION");
+      assert.equal(app.eval("game.stageIndex"),stage+1);
+      app.eval("game.transition=0;updatePlaying(.016)");
+      assert.equal(app.eval("game.stageMode"),"BOSS");
+      assert.equal(app.eval("game.enemies.length"),0);
+    }
+  }
+  assert.equal(app.eval("game.state"),"RUSH_CLEAR");
+  assert.equal(app.eval("game.stats.bossesDefeated"),5);
+  assert.equal(app.eval("game.firstClearAcknowledged"),false);
+  app.eval("drawFrame(.016)");
+  app.events.get("keydown")({code:"Enter",repeat:false,preventDefault(){}});
+  assert.equal(app.eval("game.state"),"TITLE");
+});
+
+test("Boss Rush Game Over saves separate best and never pollutes Classic high score", () => {
+  const app=boot();
+  app.eval('saveHighScore(5000);menu.selectedMode="bossRush";startSelectedGame();game.score=1234;gameOver()');
+  assert.equal(app.eval("game.highScore"),1234);
+  assert.equal(app.eval('modeHighScore("bossRush")'),1234);
+  assert.equal(app.eval('modeHighScore("classic")'),5000);
+  app.eval("drawFrame(.016)");
+});
+
+test("Training fatal damage restores drill equipment without reaching a Game Over state", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="training";menu.trainingStage=2;startSelectedGame();game.hp=1;game.bomb=0;game.weaponLevel=1;damagePlayer()');
+  assert.equal(app.eval("game.state"),"PLAYING");
+  assert.equal(app.eval("game.hp"),5);
+  assert.equal(app.eval("game.weaponLevel"),3);
+  assert.equal(app.eval("game.bomb"),3);
+  assert.equal(app.eval("game.stats.trainingResets"),1);
+  assert.equal(app.eval("game.stats.damageTaken"),1);
+  assert.equal(app.eval('modeHighScore("training")'),0);
+  assert.equal(app.eval('saveModeHighScore("training",99999)'),0);
+});
+
+test("Training Boss clear restarts the selected stage and never enters classic epilogue", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="training";menu.trainingStage=4;startSelectedGame();game.waveKills=9;spawnEnemyOfKind("elite",700,460);damageEnemy(game.enemies[0],999,700,460)');
+  assert.equal(app.eval("game.stageMode"),"BOSS");
+  app.eval("game.boss.active=true;killBoss();finishBossReward()");
+  assert.equal(app.eval("game.trainingRounds"),1);
+  assert.equal(app.eval("game.stageIndex"),4);
+  assert.equal(app.eval("game.stageMode"),"TRANSITION");
+  assert.equal(app.eval("game.firstClearAcknowledged"),false);
+  assert.equal(app.eval("game.hp"),5);
+  assert.equal(app.eval("game.weaponLevel"),3);
+  app.eval("game.transition=0;updatePlaying(.016)");
+  assert.equal(app.eval("game.stageMode"),"WAVE");
+  assert.equal(app.eval("game.boss"),null);
+});
+
+test("Classic first-clear epilogue is unchanged when selecting Classic explicitly", () => {
+  const app=boot();
+  app.eval('menu.selectedMode="classic";startSelectedGame();game.stageIndex=4;game.stageMode="BOSS_REWARD";game.pendingStageAdvance={kind:"advance",loop:2,stageIndex:0,text:"LOOP 2"};finishBossReward()');
+  assert.equal(app.eval("game.state"),"ENDING");
+  app.events.get("keydown")({code:"Enter",repeat:false,preventDefault(){}});
+  assert.equal(app.eval("game.loop"),2);
+  assert.equal(app.eval("game.stageIndex"),0);
 });

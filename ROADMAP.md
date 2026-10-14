@@ -39,11 +39,15 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [ ] Boss weapon readability and difficulty pacing acceptance tests on real devices
 - [ ] Device/browser gameplay balance checks for Stages 3–5
 
-## v26 — Arcade universe (planned)
+## v26 — Arcade universe (in progress)
 
-- [ ] Boss Rush, Training and Mission modes
-- [ ] Local achievements, grades and per-mode leaderboards
-- [ ] Deterministic seeds and a replay-compatible simulation core
+- [x] Separate, tested Classic / Boss Rush / Training progression and menu rules
+- [x] Boss Rush: five real Bosses in sequence, differentiated clear / Game Over, and separate local best score
+- [x] Training: selectable stage, ten-kill Boss drills, full-health equipment reset, unranked free play
+- [ ] Mission mode and tailored completion objectives
+- [ ] Local achievements, run grades and per-mode leaderboard history
+- [ ] Daily seeded challenge; deterministic combat RNG separate from rendering; replay-compatible fixed-tick simulation still pending
+- [ ] Device/browser acceptance for mode menus and full five-Boss run
 
 ## v27 — Signature experience (planned)
 
