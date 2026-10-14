@@ -4,6 +4,8 @@ const W = 1280;
     if (!platform) throw new Error("NeonWings platform runtime missing");
     const controller = window.NeonController;
     if (!controller) throw new Error("NeonWings controller runtime missing");
+    const combatRules = window.NeonCombat;
+    if (!combatRules) throw new Error("NeonWings combat runtime missing");
     const canvas = document.getElementById("game");
     const ctx = canvas.getContext("2d", { alpha: false });
 
@@ -25,6 +27,7 @@ const W = 1280;
       a: false,
       b: false,
       bomb: false,
+      overdrive: false,
       any: false
     };
 
@@ -202,6 +205,7 @@ const W = 1280;
       "FIRE PRIMARY",
       "FIRE SECONDARY",
       "BOMB BUTTON",
+      "OVERDRIVE BUTTON",
       "STICK DEADZONE",
       "RESTORE DEFAULTS"
     ];
@@ -257,12 +261,14 @@ const W = 1280;
       const i = pauseMenu.index;
       if (pauseMenu.page === "controls") {
         if (i === 1) {
-          settings.firePrimary = controller.cycleButton(settings.firePrimary, dir, [settings.fireSecondary, settings.bombButton]);
+          settings.firePrimary = controller.cycleButton(settings.firePrimary, dir, [settings.fireSecondary, settings.bombButton, settings.overdriveButton]);
         } else if (i === 2) {
-          settings.fireSecondary = controller.cycleButton(settings.fireSecondary, dir, [settings.firePrimary, settings.bombButton]);
+          settings.fireSecondary = controller.cycleButton(settings.fireSecondary, dir, [settings.firePrimary, settings.bombButton, settings.overdriveButton]);
         } else if (i === 3) {
-          settings.bombButton = controller.cycleButton(settings.bombButton, dir, [settings.firePrimary, settings.fireSecondary]);
+          settings.bombButton = controller.cycleButton(settings.bombButton, dir, [settings.firePrimary, settings.fireSecondary, settings.overdriveButton]);
         } else if (i === 4) {
+          settings.overdriveButton = controller.cycleButton(settings.overdriveButton, dir, [settings.firePrimary, settings.fireSecondary, settings.bombButton]);
+        } else if (i === 5) {
           settings.stickDeadzone = clamp(Math.round(settings.stickDeadzone * 100 + dir * 2) / 100, 0.08, 0.44);
         } else {
           return;
@@ -293,7 +299,8 @@ const W = 1280;
         if (index === 1) return controller.buttonLabel(settings.firePrimary);
         if (index === 2) return controller.buttonLabel(settings.fireSecondary);
         if (index === 3) return controller.buttonLabel(settings.bombButton);
-        if (index === 4) return pct(settings.stickDeadzone);
+        if (index === 4) return controller.buttonLabel(settings.overdriveButton);
+        if (index === 5) return pct(settings.stickDeadzone);
         return "";
       }
       if (index === 3) return pct(settings.master);
@@ -327,7 +334,7 @@ const W = 1280;
           pauseMenu.page = "main";
           pauseMenu.index = pauseItems.length - 1;
           sfx("select");
-        } else if (i === 5) {
+        } else if (i === 6) {
           Object.assign(settings, controller.DEFAULTS);
           saveSettings();
           sfx("confirm");
@@ -830,6 +837,20 @@ const W = 1280;
         playTone(132, 0.38, "sawtooth", 0.16, 1.35, 0, true);
         playNoise(0.55, 0.26, 1800, 0, true, "lowpass");
         setTimeout(() => playLaserSweep(280, 1600, 0.32, 0.14, 0), 80);
+      } else if (name === "graze") {
+        if (!sfxAllowed("graze", 0.13)) return;
+        playTone(1250, 0.04, "triangle", 0.022, 1.16, pxPan, false);
+      } else if (name === "overdriveReady") {
+        if (!sfxAllowed("overdriveReady", 0.5)) return;
+        playTone(620, 0.15, "triangle", 0.085, 1.5, 0, true);
+        playTone(930, 0.18, "triangle", 0.06, 1.3, 0.12, true);
+      } else if (name === "overdriveOn") {
+        if (!sfxAllowed("overdriveOn", 0.35)) return;
+        playLaserSweep(240, 1420, 0.44, 0.14, 0);
+        playTone(115, 0.34, "sawtooth", 0.12, 1.6, 0, true);
+      } else if (name === "overdriveOff") {
+        if (!sfxAllowed("overdriveOff", 0.35)) return;
+        playTone(650, 0.17, "triangle", 0.07, 0.5, 0, true);
       } else if (name === "select") {
         if (!sfxAllowed("select", 0.080)) return;
         playTone(720, 0.050, "triangle", 0.050, 1.18, 0, true);
@@ -888,6 +909,8 @@ const W = 1280;
 
         score: 0,
         highScore: highScore(),
+        combat: combatRules.createState(),
+        missileSequence: 0,
         stats: {
           kills: 0,
           bombsUsed: 0,
@@ -983,6 +1006,42 @@ const W = 1280;
     function showMessage(text, time = 1.4) {
       game.message = text;
       game.messageTimer = time;
+    }
+
+    function announceDriveReady(ready) {
+      if (!ready) return;
+      sfx("overdriveReady");
+      showMessage("OVERDRIVE READY  Y / C", 1.6);
+    }
+
+    function activateOverdrive() {
+      if (game.state !== "PLAYING" || (game.stageMode !== "WAVE" && game.stageMode !== "BOSS")) return false;
+      if (!combatRules.activate(game.combat, selectedShip().id)) return false;
+      sfx("overdriveOn");
+      haptic("overdrive", 0.55, 0.70, 230, 0.25);
+      game.shake = Math.max(game.shake, 14);
+      showMessage("NEON OVERDRIVE  ONLINE", 1.4);
+      for (let i = 0; i < 44; i++) {
+        const a = i / 44 * Math.PI * 2;
+        addParticle(game.player.x, game.player.y, Math.cos(a) * rand(110, 280), Math.sin(a) * rand(110, 280), rand(0.32, 0.66), selectedShip().accent);
+      }
+      return true;
+    }
+
+    function awardEnemyKill(e, source = "shot") {
+      const result = combatRules.registerKill(game.combat, Math.round(e.score * difficultyScale()), selectedShip().id, source);
+      game.score += result.points;
+      game.waveKills += 1;
+      game.stats.kills += 1;
+      maybeDropPowerup(e);
+      announceDriveReady(result.ready);
+    }
+
+    function awardBossKill(source = "shot") {
+      const base = Math.round((900 + game.stageIndex * 240) * difficultyScale());
+      const result = combatRules.registerKill(game.combat, base, selectedShip().id, source);
+      game.score += result.points;
+      announceDriveReady(result.ready);
     }
 
     function enterSelect() {
@@ -1107,6 +1166,7 @@ const W = 1280;
       const aDown = controller.pressed(pad, 0);
       const bDown = controller.pressed(pad, 1);
       const bombDown = controller.pressed(pad, settings.bombButton);
+      const overdriveDown = controller.pressed(pad, settings.overdriveButton);
       const anyDown = controller.anyPressed(pad);
 
       if (anyDown && !gamepadEdge.any) unlockAudio();
@@ -1128,6 +1188,7 @@ const W = 1280;
         if (startDown && !gamepadEdge.start) handleStartButton();
         if (selectDown && !gamepadEdge.select) toggleFullscreen();
         if (game.state === "PLAYING" && bombDown && !gamepadEdge.bomb) useBomb();
+        if (game.state === "PLAYING" && overdriveDown && !gamepadEdge.overdrive) activateOverdrive();
 
         if (game.state === "SELECT") {
           if (leftDown && !gamepadEdge.left) cycleShip(-1);
@@ -1144,6 +1205,7 @@ const W = 1280;
       gamepadEdge.a = aDown;
       gamepadEdge.b = bDown;
       gamepadEdge.bomb = bombDown;
+      gamepadEdge.overdrive = overdriveDown;
       gamepadEdge.any = anyDown;
     }
 
@@ -1664,14 +1726,24 @@ const W = 1280;
       }
     }
 
-    function addPlayerShot(x, y, vx, vy, r = 8, power = 1, c = "#5ae8ff") {
-      game.bullets.push({ x, y, vx, vy, r, power, c });
+    function addPlayerShot(x, y, vx, vy, r = 8, power = 1, c = "#5ae8ff", extra = {}) {
+      game.bullets.push({
+        x, y, vx, vy, r,
+        power: power * combatRules.weaponDamageScale(game.combat, selectedShip().id),
+        c, ...extra
+      });
     }
 
     function addMissile(x, y, vySign = 1, power = 2) {
       sfx("missile");
       haptic("missile", 0.10, 0.12, 24, 0.12);
-      game.missiles.push({ x, y, vx: 520, vy: vySign * 160, r: 14, power, life: 4.6, turn: 4.2, trail: 0 });
+      const overdrive = combatRules.isActive(game.combat);
+      game.missiles.push({
+        x, y, vx: 520, vy: vySign * 160, r: 14,
+        power: power * combatRules.weaponDamageScale(game.combat, selectedShip().id),
+        life: 4.6, turn: overdrive ? 5.8 : 4.2, trail: 0,
+        overdrive, targetSlot: (game.missileSequence++) % 3
+      });
     }
 
     function firePlayerWeapons() {
@@ -1679,6 +1751,7 @@ const W = 1280;
       hapticShot();
       const level = game.weaponLevel;
       const type = game.weaponType;
+      const overdrive = combatRules.isActive(game.combat);
       const muzzleX = game.player.x + 62;
       const baseY = game.player.y;
 
@@ -1690,9 +1763,23 @@ const W = 1280;
           addPlayerShot(muzzleX - 4, baseY - 26, 1060, 0, 8, 1, "#8ef7ff");
           addPlayerShot(muzzleX - 4, baseY + 28, 1060, 0, 8, 1, "#8ef7ff");
         }
+        if (overdrive) {
+          // An extra cyan lance can pierce three distinct enemies, not the same enemy three times.
+          addPlayerShot(muzzleX + 8, baseY, 1420, 0, 17, 2.25 + level * 0.25, "#e8fdff",
+            { pierce: 3, hitEnemies: [], lance: true });
+        }
       } else if (type === "purple") {
-        const fan = level === 1 ? [-0.10, 0, 0.10] : level === 2 ? [-0.20, -0.09, 0.09, 0.20] : [-0.30, -0.18, -0.07, 0.07, 0.18, 0.30];
-        for (const a of fan) addPlayerShot(muzzleX, baseY, Math.cos(a) * 960, Math.sin(a) * 960, 8, level >= 3 ? 1.05 : 0.9, "#c084ff");
+        const fan = overdrive
+          ? (level === 1 ? [-0.42, -0.21, 0, 0.21, 0.42]
+            : level === 2 ? [-0.48, -0.29, -0.1, 0.1, 0.29, 0.48]
+            : [-0.58, -0.42, -0.25, -0.08, 0.08, 0.25, 0.42, 0.58])
+          : (level === 1 ? [-0.10, 0, 0.10]
+            : level === 2 ? [-0.20, -0.09, 0.09, 0.20]
+            : [-0.30, -0.18, -0.07, 0.07, 0.18, 0.30]);
+        for (const a of fan) addPlayerShot(
+          muzzleX, baseY, Math.cos(a) * 960, Math.sin(a) * 960,
+          8, level >= 3 ? 1.05 : 0.9, "#c084ff", { pointBlank: overdrive }
+        );
       } else {
         addPlayerShot(muzzleX + 4, baseY, 1020, 0, 11, 1.35, "#ffd76b");
         if (level >= 2) {
@@ -1705,10 +1792,18 @@ const W = 1280;
           addMissile(game.player.x - 24, game.player.y - 54, -1, 2.3);
           addMissile(game.player.x - 24, game.player.y + 54, 1, 2.3);
         }
+        // Performance cap: extra missiles are reduced when the playfield is already saturated.
+        if (overdrive && game.missiles.length < 44) {
+          addMissile(game.player.x - 40, game.player.y - 64, -1, 2.4);
+          addMissile(game.player.x - 40, game.player.y + 64, 1, 2.4);
+        }
       }
 
       const meta = weaponMeta();
-      for (let i = 0; i < 3 + level; i++) addParticle(game.player.x - 72, game.player.y + rand(-10, 10), rand(-120, -30), rand(-60, 60), 0.13, i % 2 ? meta.color : "#fff1a8");
+      for (let i = 0; i < 3 + level; i++) addParticle(
+        game.player.x - 72, game.player.y + rand(-10, 10), rand(-120, -30), rand(-60, 60),
+        0.13, i % 2 ? meta.color : "#fff1a8"
+      );
     }
 
     function getFireCooldown() {
@@ -1718,6 +1813,21 @@ const W = 1280;
     }
 
     function findMissileTarget(m) {
+      if (m.overdrive && !game.boss && game.enemies.length > 1) {
+        // Spread overdrive seekers across the nearest three living targets.
+        // Keep a small sorted list to avoid sorting all enemies per missile per frame.
+        const closest = [];
+        for (const e of game.enemies) {
+          if (e.hp <= 0) continue;
+          const score = dist(m.x, m.y, e.x, e.y) + (e.x < m.x - 60 ? 1200 : 0);
+          let insertAt = 0;
+          while (insertAt < closest.length && closest[insertAt].score <= score) insertAt++;
+          if (insertAt >= 3) continue;
+          closest.splice(insertAt, 0, { enemy: e, score });
+          if (closest.length > 3) closest.pop();
+        }
+        if (closest.length) return closest[m.targetSlot % closest.length].enemy;
+      }
       let best = null;
       let bestScore = Infinity;
 
@@ -1757,10 +1867,7 @@ const W = 1280;
       if (e.hp <= 0) {
         sfx("explode");
         hapticExplosion();
-        game.score += Math.round(e.score * difficultyScale());
-        game.waveKills += 1;
-        game.stats.kills += 1;
-        maybeDropPowerup(e);
+        awardEnemyKill(e);
         game.shake = Math.max(game.shake, 8);
 
         for (let i = 0; i < 26; i++) addParticle(e.x, e.y, rand(-240, 190), rand(-220, 220), rand(0.25, 0.70), i % 2 ? e.core : e.color);
@@ -1938,7 +2045,7 @@ const W = 1280;
       for (let i = 0; i < 10; i++) addParticle(x, y, rand(-180, 90), rand(-150, 150), rand(0.16, 0.38), i % 2 ? color : b.color);
 
       if (b.hp <= 0) {
-        game.score += Math.round((900 + game.stageIndex * 240) * difficultyScale());
+        awardBossKill();
         sfx("explode");
         haptic("bossDead", 1.0, 0.85, 360, 0.6);
         killBoss();
@@ -2114,17 +2221,27 @@ const W = 1280;
 
         for (const e of game.enemies) {
           if (e.hp <= 0) continue;
-          if (dist(b.x, b.y, e.x, e.y) < b.r + e.r) {
+          if (b.hitEnemies?.includes(e)) continue;
+          if (dist(b.x, b.y, e.x, e.y) >= b.r + e.r) continue;
+
+          const close = e.x >= game.player.x && e.x - game.player.x <= 300;
+          const damage = (b.power || 1) * (b.pointBlank && close ? 1.5 : 1);
+          if (b.hitEnemies) {
+            b.hitEnemies.push(e);
+            b.pierce -= 1;
+            b.dead = b.pierce <= 0;
+          } else {
             b.dead = true;
-            damageEnemy(e, b.power || 1, b.x, b.y, b.c);
-            break;
           }
+          damageEnemy(e, damage, b.x, b.y, b.c);
+          if (b.dead) break;
         }
 
         const boss = game.boss;
         if (!b.dead && boss && boss.active && Math.abs(b.x - boss.x) < boss.rx + b.r && Math.abs(b.y - boss.y) < boss.ry + b.r) {
-          b.dead = true;
-          damageBoss(b.power || 1, b.x, b.y, b.c);
+          const close = boss.x >= game.player.x && boss.x - game.player.x <= 300;
+          b.dead = true; // Even a piercing lance only hits the boss once.
+          damageBoss((b.power || 1) * (b.pointBlank && close ? 1.5 : 1), b.x, b.y, b.c);
         }
       }
 
@@ -2132,27 +2249,52 @@ const W = 1280;
     }
 
     function updateEnemyBullets(dt) {
-      for (const b of game.enemyBullets) {
-        b.x += b.vx * dt;
-        b.y += b.vy * dt;
-        b.life -= dt;
+      for (const bullet of game.enemyBullets) {
+        bullet.x += bullet.vx * dt;
+        bullet.y += bullet.vy * dt;
+        bullet.life -= dt;
       }
 
+      // Collisions always take precedence over grazing and no graze is earned while invulnerable.
       if (game.invuln <= 0) {
-        for (const b of game.enemyBullets) {
-          if (dist(game.player.x, game.player.y, b.x, b.y) < b.r + selectedShip().hitbox) {
-            b.life = 0;
+        for (const bullet of game.enemyBullets) {
+          if (bullet.life <= 0) continue;
+          const hitRadius = bullet.r + selectedShip().hitbox;
+          if (dist(game.player.x, game.player.y, bullet.x, bullet.y) <= hitRadius) {
+            bullet.life = 0;
             damagePlayer();
             break;
           }
+          const graze = combatRules.registerGraze(
+            game.combat, bullet, game.player.x, game.player.y, selectedShip().hitbox, selectedShip().id
+          );
+          if (graze.grazed) {
+            sfx("graze");
+            if (game.combat.grazes % 4 === 0) haptic("graze", 0.12, 0.07, 25, 0.14);
+            for (let i = 0; i < 5; i++) addParticle(
+              bullet.x, bullet.y, rand(-85, 85), rand(-85, 85), rand(0.12, 0.32), "#8ef7ff"
+            );
+            announceDriveReady(graze.ready);
+          }
         }
       }
-
       game.enemyBullets = game.enemyBullets.filter(b => b.life > 0 && b.x > -60 && b.x < W + 80 && b.y > -80 && b.y < H + 80);
     }
 
     function damagePlayer() {
       if (game.invuln > 0 || game.state !== "PLAYING") return;
+      const hit = combatRules.takeHit(game.combat, selectedShip().id);
+      if (hit.blocked) {
+        game.invuln = 0.85;
+        game.shake = Math.max(game.shake, 9);
+        sfx("overdriveReady");
+        haptic("shield", 0.34, 0.24, 100, 0.12);
+        showMessage("VANGUARD SHIELD ABSORBED HIT", 1.2);
+        for (let i = 0; i < 24; i++) addParticle(
+          game.player.x, game.player.y, rand(-170, 170), rand(-170, 170), rand(0.18, 0.48), "#fff4b7"
+        );
+        return;
+      }
 
       sfx("damage");
       hapticDamage();
@@ -2188,8 +2330,9 @@ const W = 1280;
       iy /= mag;
 
       const ship = selectedShip();
-      game.player.vx = ix * ship.speed;
-      game.player.vy = iy * ship.speed;
+      const overdriveSpeed = ship.id === "falcon" && combatRules.isActive(game.combat) ? 1.18 : 1;
+      game.player.vx = ix * ship.speed * overdriveSpeed;
+      game.player.vy = iy * ship.speed * overdriveSpeed;
       // Player can now use most of the screen width.
       // Right edge still leaves a small safety margin so the jet never clips off-screen.
       game.player.x = clamp(game.player.x + game.player.vx * dt, 76, W - 130);
@@ -2242,13 +2385,15 @@ const W = 1280;
         }
 
         if (e.hp <= 0) {
-          game.score += Math.round(e.score * difficultyScale());
-          game.waveKills += 1;
-          maybeDropPowerup(e);
+          awardEnemyKill(e, "bomb");
         }
       }
 
       game.enemies = game.enemies.filter(e => e.hp > 0);
+      // A bomb can complete the wave without another regular shot.
+      if (game.stageMode === "WAVE" && game.waveKills >= killTarget()) {
+        spawnBoss();
+      }
 
       const b = game.boss;
       if (b && b.active) {
@@ -2268,7 +2413,7 @@ const W = 1280;
 
         if (b.hp <= 0) {
           b.hp = 0;
-          game.score += Math.round((900 + game.stageIndex * 240) * difficultyScale());
+          awardBossKill("bomb");
           killBoss();
         }
       }
@@ -2344,6 +2489,11 @@ const W = 1280;
         }
 
         return;
+      }
+
+      if (combatRules.tick(game.combat, dt)) {
+        sfx("overdriveOff");
+        showMessage("OVERDRIVE OFFLINE", 0.8);
       }
 
       const firing = readInput(dt);
@@ -2434,8 +2584,12 @@ const W = 1280;
         ctx.translate(b.x, b.y);
         ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
         const core = b.c || "#5ae8ff";
-        const length = b.power > 1.5 ? 40 : b.power > 1.1 ? 34 : 30;
-        const height = b.r > 9 ? 12 : 10;
+        const length = b.lance ? 90 : b.power > 1.5 ? 40 : b.power > 1.1 ? 34 : 30;
+        const height = b.lance ? 22 : b.r > 9 ? 12 : 10;
+        if (b.lance) {
+          ctx.shadowColor = "#8ef7ff";
+          ctx.shadowBlur = 22;
+        }
         rect(-4, -height / 2, length, height, "#eefcff");
         rect(10, -2, length - 10, 4, core);
         if (b.power > 1.3) rect(-10, -2, 10, 4, "rgba(255,241,168,.65)");
@@ -2467,6 +2621,33 @@ const W = 1280;
         rect(-16, -1, 10, 2, "rgba(255,255,255,.35)");
         ctx.restore();
       }
+    }
+
+    function drawOverdriveAura() {
+      if (!combatRules.isActive(game.combat)) return;
+      const ship = selectedShip();
+      const p = game.player;
+      const pulse = 0.75 + Math.sin(game.t * 17) * 0.2;
+
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.strokeStyle = ship.accent;
+      ctx.lineWidth = 5;
+      ctx.globalAlpha = pulse;
+      ctx.shadowColor = ship.accent;
+      ctx.shadowBlur = 22;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, ship.hitbox + 66, ship.hitbox + 58, 0, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (ship.id === "vanguard" && game.combat.guard > 0) {
+        ctx.strokeStyle = "#fff4b7";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 88, 70, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     function drawBombFlash() {
@@ -2542,8 +2723,7 @@ const W = 1280;
     function drawHud() {
       const meta = weaponMeta();
 
-      // v22 HUD layout:
-      // Split the top HUD into three separated panels so BOMB, weapon and stage info never collide.
+      // Preserve the readable three-panel HUD while adding a compact lower Overdrive strip.
       ctx.fillStyle = "rgba(0,0,0,.36)";
       ctx.fillRect(24, 22, 590, 78);
       drawText(`SCORE ${String(game.score).padStart(6, "0")}`, 44, 50, 26);
@@ -2565,6 +2745,32 @@ const W = 1280;
         ctx.fillStyle = "rgba(0,0,0,.36)";
         ctx.fillRect(24, 116, 330, 36);
         drawText(`KILLS ${game.waveKills}/${killTarget()}  → BOSS`, 42, 135, 20);
+      }
+
+      if (game.stageMode === "WAVE" || game.stageMode === "BOSS") {
+        const combat = game.combat;
+        const active = combatRules.isActive(combat);
+        const baseX = 24, baseY = H - 112;
+        ctx.fillStyle = "rgba(0,0,0,.58)";
+        ctx.fillRect(baseX, baseY, 510, 92);
+        const accent = active ? "#fff4b7" : combat.energy >= 100 ? "#8ef7ff" : "#38e8ff";
+        const title = active
+          ? `OVERDRIVE ACTIVE  ${combat.active.toFixed(1)}s`
+          : combat.energy >= 100
+          ? `OVERDRIVE READY  ${controller.buttonLabel(settings.overdriveButton)} / C`
+          : `OVERDRIVE  ${Math.floor(combat.energy)} / 100`;
+        drawText(title, baseX + 20, baseY + 25, 23, "left", accent);
+        ctx.fillStyle = "rgba(255,255,255,.13)";
+        ctx.fillRect(baseX + 20, baseY + 52, 470, 13);
+        ctx.fillStyle = accent;
+        ctx.fillRect(baseX + 20, baseY + 52, 470 * (active ? combat.active / (selectedShip().id === "falcon" ? 6 : 7) : combat.energy / 100), 13);
+        drawText(active ? selectedShip().id === "vanguard" ? `SHIELD ${combat.guard}` : "FALCON BOOST"
+          : "GRAZE BULLETS / DESTROY ENEMIES TO CHARGE", baseX + 20, baseY + 78, 17, "left", "#c3e9f2");
+
+        ctx.fillStyle = "rgba(0,0,0,.52)";
+        ctx.fillRect(W - 352, H - 102, 328, 80);
+        drawText(`CHAIN ${combat.combo}  x${combatRules.multiplier(combat.combo)}`, W - 336, H - 70, 27, "left", "#fff4b7");
+        drawText(`GRAZES ${combat.grazes}  /  BEST ${combat.maxCombo}`, W - 336, H - 37, 19, "left", "#e7fbff");
       }
 
       if (game.stageIntro > 0 && game.state === "PLAYING" && game.stageMode === "WAVE") {
@@ -2654,7 +2860,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v23.0", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v24.0", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -2663,7 +2869,7 @@ const W = 1280;
       ctx.fillStyle = "rgba(0,0,0,.34)";
       ctx.fillRect(W / 2 - 360, 625, 720, 72);
       drawText("PRESS START / ENTER", W / 2, 662, 28, "center", "#fff4b7");
-      drawText("POLISHED HUD  /  PAUSE MENU  /  VOLUME SETTINGS  /  FORMATIONS", W / 2, 760, 22, "center", "rgba(231,251,255,.78)");
+      drawText("NEON OVERDRIVE  /  GRAZE TO CHARGE  /  Y OR C TO ACTIVATE", W / 2, 760, 22, "center", "rgba(231,251,255,.78)");
     }
 
     function drawShipPreview(ship, x, y, scale = 1.4, selected = false) {
@@ -2763,6 +2969,8 @@ const W = 1280;
       drawText("DAMAGE", rightX, rowY + rowGap * 2, 21, "left", labelColor);
       drawText(String(game.stats.damageTaken), rightX + 220, rowY + rowGap * 2, 22, "left", "#ff8aa7");
 
+      drawText(`GRAZES ${game.combat.grazes}   MAX CHAIN ${game.combat.maxCombo}   OVERDRIVES ${game.combat.activations}`,
+        W / 2, cardY + 361, 20, "center", "#8ef7ff");
       drawText("PRESS START / ENTER TO TITLE", W / 2, cardY + cardH - 44, 24, "center", "rgba(231,251,255,.82)");
     }
 
@@ -2796,6 +3004,7 @@ const W = 1280;
       }
 
       drawBackground(dt);
+      drawOverdriveAura();
       drawBombFlash();
 
       drawPlayerBullets();
@@ -2863,6 +3072,7 @@ const W = 1280;
         return;
       }
 
+      const freshPress = !keys[e.code];
       keys[e.code] = true;
 
       if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) e.preventDefault();
@@ -2896,8 +3106,13 @@ const W = 1280;
         return;
       }
 
+      if (game.state === "PLAYING" && (e.code === "KeyC" || e.code === "KeyI")) {
+        if (freshPress) activateOverdrive();
+        return;
+      }
+
       if (game.state === "PLAYING" && (e.code === "ShiftLeft" || e.code === "ShiftRight" || e.code === "KeyL" || e.code === "KeyX")) {
-        useBomb();
+        if (freshPress) useBomb();
         return;
       }
 

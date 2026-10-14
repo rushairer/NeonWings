@@ -5,6 +5,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const platform = require("../src/platform.js");
 const controller = require("../src/controller.js");
+const combat = require("../src/combat.js");
 const source = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
 function makePad(index = 0) {
@@ -25,7 +26,7 @@ function boot(storage = new Map()) {
   const canvas = { style: {}, getContext: () => ({}) };
   const window = {
     innerWidth: 1280, innerHeight: 960,
-    NeonPlatform: platform, NeonController: controller,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat,
     addEventListener: (event, callback) => listeners.set(event, callback)
   };
   const document = {
@@ -69,24 +70,24 @@ test("controller options can remap fire/bomb and persist to another boot", () =>
   assert.equal(app.eval('pauseMenu.page'), 'controls');
   app.eval('pauseMenu.index = 1; adjustPauseItem(1)');
   assert.equal(app.eval('settings.firePrimary'), 2);
-  app.eval('pauseMenu.index = 3; adjustPauseItem(1); adjustPauseItem(1)');
-  // A -> B -> Y: X is already reserved for the primary fire button.
-  assert.equal(app.eval('settings.bombButton'), 3);
+  app.eval('pauseMenu.index = 3; adjustPauseItem(1)');
+  // A -> LB: B / X are firing and Y is reserved for Overdrive.
+  assert.equal(app.eval('settings.bombButton'), 4);
   const after = boot(storage);
   assert.equal(after.eval('settings.firePrimary'), 2);
-  assert.equal(after.eval('settings.bombButton'), 3);
+  assert.equal(after.eval('settings.bombButton'), 4);
   after.eval('game.state = "PLAYING"');
   press(after.pad, 2, true);
   assert.equal(after.eval('readInput(0.016)'), true);
   press(after.pad, 2, false);
-  press(after.pad, 3, true);
+  press(after.pad, 4, true);
   after.eval('pollGamepadSystemButtons()');
   assert.equal(after.eval('game.bomb'), 1);
   after.eval('pollGamepadSystemButtons()');
   assert.equal(after.eval('game.bomb'), 1);
-  press(after.pad, 3, false);
+  press(after.pad, 4, false);
   after.eval('pollGamepadSystemButtons()');
-  press(after.pad, 3, true);
+  press(after.pad, 4, true);
   after.eval('pollGamepadSystemButtons()');
   assert.equal(after.eval('game.bomb'), 0);
 });
@@ -97,7 +98,7 @@ test("deadzone adjustment affects input, not D-pad controls", () => {
   app.pad.axes[0] = 0.14;
   app.eval('readInput(0.016)');
   assert.equal(app.eval('game.player.vx'), 0);
-  app.eval('game.state = "PAUSED"; pauseMenu.page = "controls"; pauseMenu.index = 4; adjustPauseItem(-1)');
+  app.eval('game.state = "PAUSED"; pauseMenu.page = "controls"; pauseMenu.index = 5; adjustPauseItem(-1)');
   assert.equal(app.eval('settings.stickDeadzone'), 0.16);
   app.eval('game.state = "PLAYING"');
   app.pad.axes[0] = 0.17;
@@ -136,11 +137,44 @@ test("silent disconnect is detected during polling", () => {
 
 test("reset controller settings preserves audio settings and escape exits submenu", () => {
   const app = boot();
-  app.eval('settings.master = 0.5; settings.firePrimary = 2; settings.bombButton = 3; game.state = "PAUSED"; pauseMenu.page = "controls"; pauseMenu.index = 5; activatePauseItem()');
+  app.eval('settings.master = 0.5; settings.firePrimary = 2; settings.bombButton = 3; game.state = "PAUSED"; pauseMenu.page = "controls"; pauseMenu.index = 6; activatePauseItem()');
   assert.equal(app.eval('settings.master'), 0.5);
   assert.equal(app.eval('settings.firePrimary'), 1);
   assert.equal(app.eval('settings.bombButton'), 0);
   app.listeners.get('keydown')({ code: 'Escape', preventDefault() {} });
   assert.equal(app.eval('game.state'), 'PAUSED');
   assert.equal(app.eval('pauseMenu.page'), 'main');
+});
+
+test("overdrive button remaps independently without stealing shooting or bomb input", () => {
+  const app = boot();
+  app.eval('game.state = "PAUSED"; pauseMenu.page = "controls"; pauseMenu.index = 4; adjustPauseItem(1)');
+  assert.equal(app.eval("settings.overdriveButton"), 4);
+  app.eval('game.state = "PLAYING"; game.combat.energy = 100');
+  press(app.pad, 4, true);
+  app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.combat.active"), 6);
+  assert.equal(app.eval("game.bomb"), 2);
+  assert.equal(app.eval("readInput(0)"), false);
+  app.eval("game.combat.active = 0; game.combat.energy = 100");
+  app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.combat.active"), 0); // edge-triggered
+  press(app.pad, 4, false);
+  app.eval("pollGamepadSystemButtons()");
+  press(app.pad, 4, true);
+  app.eval("pollGamepadSystemButtons()");
+  assert.equal(app.eval("game.combat.active"), 6);
+});
+
+test("keyboard C activates only on new key press", () => {
+  const app = boot();
+  app.eval('game.state = "PLAYING"; game.combat.energy = 100');
+  app.listeners.get("keydown")({ code: "KeyC", preventDefault() {} });
+  assert.equal(app.eval("game.combat.active"), 6);
+  app.eval("game.combat.active = 0; game.combat.energy = 100");
+  app.listeners.get("keydown")({ code: "KeyC", preventDefault() {} });
+  assert.equal(app.eval("game.combat.active"), 0);
+  app.listeners.get("keyup")({ code: "KeyC" });
+  app.listeners.get("keydown")({ code: "KeyC", preventDefault() {} });
+  assert.equal(app.eval("game.combat.active"), 6);
 });

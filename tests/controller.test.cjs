@@ -7,14 +7,14 @@ const pad = (pressed = []) => ({
 });
 
 test("defaults preserve B / RT for fire and A for bomb", () => {
-  assert.deepEqual(controller.sanitizeSettings(), { firePrimary: 1, fireSecondary: 7, bombButton: 0, stickDeadzone: 0.18 });
+  assert.deepEqual(controller.sanitizeSettings(), { firePrimary: 1, fireSecondary: 7, bombButton: 0, overdriveButton: 3, stickDeadzone: 0.18 });
   assert.equal(controller.pressed(pad([7]), controller.DEFAULTS.fireSecondary), true);
   assert.equal(controller.pressed(pad([0]), controller.DEFAULTS.bombButton), true);
 });
 
 test("corrupted or duplicate bindings are repaired without disabling an action", () => {
   const stored = controller.sanitizeSettings({ firePrimary: 2, fireSecondary: 2, bombButton: 2, stickDeadzone: "NaN" });
-  assert.deepEqual(new Set([stored.firePrimary, stored.fireSecondary, stored.bombButton]).size, 3);
+  assert.deepEqual(new Set([stored.firePrimary, stored.fireSecondary, stored.bombButton, stored.overdriveButton]).size, 4);
   assert.equal(stored.firePrimary, 2);
   assert.equal(stored.stickDeadzone, 0.18);
   assert.deepEqual(controller.sanitizeSettings({ stickDeadzone: 99 }).stickDeadzone, 0.44);
@@ -43,4 +43,12 @@ test("gamepad control helpers tolerate missing APIs and avoid phantom presses", 
   assert.equal(controller.pressed(pad([0]), 1), false);
   assert.equal(controller.anyPressed(pad()), false);
   assert.equal(controller.anyPressed(pad([6])), true);
+});
+
+test("overdrive binding migrates old settings and avoids all combat button collisions", () => {
+  const migrated = controller.sanitizeSettings({ firePrimary: 3, fireSecondary: 7, bombButton: 0 });
+  assert.equal(migrated.firePrimary, 3);
+  assert.equal(new Set([migrated.firePrimary, migrated.fireSecondary, migrated.bombButton, migrated.overdriveButton]).size, 4);
+  assert.equal(controller.sanitizeSettings({ overdriveButton: 6 }).overdriveButton, 6);
+  assert.equal(controller.sanitizeSettings({ overdriveButton: 9 }).overdriveButton, 3);
 });

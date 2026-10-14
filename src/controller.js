@@ -16,6 +16,7 @@
     firePrimary: 1,
     fireSecondary: 7,
     bombButton: 0,
+    overdriveButton: 3,
     stickDeadzone: 0.18
   });
 
@@ -36,12 +37,13 @@
     const firePrimary = validButton(source.firePrimary, DEFAULTS.firePrimary);
     const fireSecondary = validButton(source.fireSecondary, DEFAULTS.fireSecondary, [firePrimary]);
     const bombButton = validButton(source.bombButton, DEFAULTS.bombButton, [firePrimary, fireSecondary]);
+    const overdriveButton = validButton(source.overdriveButton, DEFAULTS.overdriveButton, [firePrimary, fireSecondary, bombButton]);
     const rawDeadzone = source.stickDeadzone;
     const parsed = rawDeadzone == null || rawDeadzone === "" ? DEFAULTS.stickDeadzone : Number(rawDeadzone);
     const stickDeadzone = Number.isFinite(parsed)
       ? Math.round(Math.max(0.08, Math.min(0.44, parsed)) * 100) / 100
       : DEFAULTS.stickDeadzone;
-    return { firePrimary, fireSecondary, bombButton, stickDeadzone };
+    return { firePrimary, fireSecondary, bombButton, overdriveButton, stickDeadzone };
   }
 
   function cycleButton(current, direction, reserved = []) {

@@ -4,11 +4,13 @@
 - Target: handheld-first arcade shoot-'em-up for AYANEO AIR MINI, with web keyboard fallback.
 - Keep the logical game field at **1280 × 960 (4:3)**; use letterboxing rather than nonlinear viewport stretching.
 - Preserve all five stages, boss transitions, the two original fighters, weapon drops, bomb rewards and multiple loops unless explicitly changing gameplay.
-- Gamepad defaults: B and RT fire, A bombs, Start pauses/resumes, Select toggles fullscreen. Remapping is limited to fire/bomb combat actions; physical B confirms menus, and Start/Select are never remapped.
+- Gamepad defaults: B and RT fire, A bombs, Y triggers Overdrive, Start pauses/resumes, Select toggles fullscreen. Remapping is limited to fire/bomb/Overdrive combat actions; physical B confirms menus, and Start/Select are never remapped.
 - Backgrounding or focus loss must not advance gameplay or force unexpected resume; avoid stuck firing inputs.
 - Do not make Web Audio or vibration mandatory; unsupported browser APIs must degrade gracefully.
 - Prefer dependency-free static delivery while the v23 foundation is being stabilized; new build dependencies require a documented rationale.
 - Keep game content and platform helpers separate. Do not mix UI/canvas resize calculations with combat simulation logic.
+- Keep scoring, graze detection, hit penalties, active timers and fighter Overdrive rules in `src/combat.js`. Do not grant more than one graze per enemy bullet or charge/combo rewards from Bomb kills; stage transitions and pause must not consume active time.
+- One Overdrive input maps to one physical button distinct from primary/secondary fire and Bomb; respect older persisted settings and preserve Start/Select/B menu actions.
 - Before shipping, run `npm run check`, `npm test`, `npm run build`. Do not equate passing unit tests with actual AYANEO hardware validation.
 - Store configuration locally without secret keys; gracefully handle storage denial and corrupted data.
 - Update README/ROADMAP for user-visible changes. Use small, scoped commits to main and never force-push.
