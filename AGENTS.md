@@ -9,6 +9,7 @@
 - Do not make Web Audio or vibration mandatory; unsupported browser APIs must degrade gracefully.
 - Prefer dependency-free static delivery while the v23 foundation is being stabilized; new build dependencies require a documented rationale.
 - Keep game content and platform helpers separate. Do not mix UI/canvas resize calculations with combat simulation logic.
+- The 1280x960 fighter/mode selector layout is defined in `src/select-layout.js`; use it from `drawSelectScreen()` rather than hardcoding vertical positions. Protect at least 40 logical px between the mode frame and either selected ship highlight, plus separate Training hint, fighter captions, detail card and score footer. Update geometry tests if the design changes.
 - Keep scoring, graze detection, hit penalties, active timers and fighter Overdrive rules in `src/combat.js`. Do not grant more than one graze per enemy bullet or charge/combo rewards from Bomb kills; stage transitions and pause must not consume active time.
 - One Overdrive input maps to one physical button distinct from primary/secondary fire and Bomb; respect older persisted settings and preserve Start/Select/B menu actions.
 - Boss targetable weapon modules belong in `src/boss-parts.js`: route bullet/missile swept hits to surviving mounts before the Boss hull; part-break rewards are one-shot; turret destruction must change actual attack cadence.

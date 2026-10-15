@@ -12,6 +12,7 @@ const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
 const modes = require("../src/modes.js");
 const records = require("../src/records.js");
+const selectLayout = require("../src/select-layout.js");
 
 const gameSource = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
@@ -31,7 +32,7 @@ function boot() {
   const canvas = { style: {}, getContext: () => ctx };
   const storage = new Map();
   const window = {
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records, NeonSelectLayout: selectLayout,
     innerWidth: 1280, innerHeight: 960,
     addEventListener: (name, fn) => events.set(name, fn)
   };
@@ -610,4 +611,56 @@ test("Records remain in memory if browser localStorage writes are unavailable", 
   assert.equal(app.eval('recordStore.top("classic").length'),1);
   app.eval('returnToTitle()');
   assert.equal(app.eval('recordStore.top("classic")[0].score'),200);
+});
+
+test("selection Canvas uses shared safe geometry for all modes and either active fighter", () => {
+  const app = boot();
+  const expected = selectLayout.create(1280, 960);
+  for (const mode of ["classic", "bossRush", "training"]) {
+    for (const ship of [0, 1]) {
+      const actual = app.eval(`(() => {
+        const drawnRects = [], labels = [], transforms = [], scales = [];
+        const previous = {
+          strokeRect:ctx.strokeRect, fillText:ctx.fillText,
+          translate:ctx.translate, scale:ctx.scale
+        };
+        ctx.strokeRect = (...args) => drawnRects.push(args);
+        ctx.fillText = (...args) => labels.push(args);
+        ctx.translate = (...args) => transforms.push(args);
+        ctx.scale = (...args) => scales.push(args);
+        game.state="SELECT";
+        menu.selectedMode="${mode}";
+        menu.selectedShip=${ship};
+        drawFrame(0.016);
+        Object.assign(ctx, previous);
+        return { drawnRects, labels, transforms, scales };
+      })()`);
+      const boxes = actual.drawnRects.map(([x,y,w,h]) => ({x,y,w,h}));
+      assert.ok(boxes.some(r =>
+        r.x === expected.mode.x && r.y === expected.mode.y &&
+        r.w === expected.mode.width && r.h === expected.mode.height
+      ), `Missing ${mode} selector rectangle / ship ${ship}`);
+      assert.ok(actual.transforms.some(([x,y]) =>
+        x === expected.preview.leftX && y === expected.preview.y
+      ), "Left fighter preview transform missing");
+      assert.ok(actual.transforms.some(([x,y]) =>
+        x === expected.preview.rightX && y === expected.preview.y
+      ), "Right fighter preview transform missing");
+      assert.ok(actual.scales.some(([value]) => value === expected.preview.selectedScale),
+        "Selected fighter scale mismatch");
+      assert.ok(actual.scales.some(([value]) => value === expected.preview.normalScale),
+        "Unselected fighter scale mismatch");
+      assert.ok(actual.labels.some(([value,,y]) =>
+        value === "SELECT FIGHTER & MODE" && y === expected.titleY
+      ), "Header must use shared layout");
+      if (mode === "training") {
+        assert.ok(actual.labels.some(([value,,y]) =>
+          String(value).includes("PRACTICE") && y === expected.trainingHintY
+        ), "Training hint must stay in its reserved gap");
+      }
+      const clearance = selectLayout.verticalGaps(expected, ship);
+      assert.ok(clearance.modeToShip >= 40);
+      assert.ok(clearance.captionToDetail >= 14);
+    }
+  }
 });

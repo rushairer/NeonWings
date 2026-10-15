@@ -18,6 +18,8 @@ const W = 1280;
     if (!modes) throw new Error("NeonWings arcade-mode runtime missing");
     const records = window.NeonRecords;
     if (!records) throw new Error("NeonWings local records runtime missing");
+    const selectLayout = window.NeonSelectLayout;
+    if (!selectLayout) throw new Error("NeonWings selection layout runtime missing");
     let recordsStorage = null;
     try { recordsStorage = localStorage; } catch (_) {
       // Sandboxed/private browsing may deny even reading the storage property.
@@ -3323,7 +3325,7 @@ const W = 1280;
       ctx.fillRect(0, 0, W, H);
 
       drawText("NEON WINGS", W / 2, 195, 86, "center", "#e7fbff");
-      drawText("HANDHELD ARCADE  /  v26.1", W / 2, 270, 28, "center", "#98f5ff");
+      drawText("HANDHELD ARCADE  /  v26.1.1", W / 2, 270, 28, "center", "#98f5ff");
       drawText(`HIGH SCORE ${String(highScore()).padStart(6, "0")}`, W / 2, 318, 24, "center", "#fff4b7");
 
       drawPlayerShip(W / 2 - 170, 492, -0.20, false, ships[0]);
@@ -3357,42 +3359,50 @@ const W = 1280;
 
     function drawSelectScreen(dt) {
       drawBackground(dt);
+      const layout = selectLayout.create(W, H);
 
-      drawText("SELECT FIGHTER & MODE", W / 2, 132, 59, "center", "#e7fbff");
+      drawText("SELECT FIGHTER & MODE", W / 2, layout.titleY, 59, "center", "#e7fbff");
       drawText("LEFT / RIGHT: SHIP    UP / DOWN: MODE    START / ENTER: LAUNCH",
-        W / 2, 195, 22, "center", "rgba(231,251,255,.78)");
+        W / 2, layout.controlsY, 22, "center", "rgba(231,251,255,.78)");
+
+      // Mode selector is its own region, clear of the selected ship's scaled frame.
       const modeDef = modes.modeById(menu.selectedMode);
       ctx.fillStyle = "rgba(3, 12, 33, .72)";
-      ctx.fillRect(W / 2 - 425, 227, 850, 99);
+      ctx.fillRect(layout.mode.x, layout.mode.y, layout.mode.width, layout.mode.height);
       ctx.strokeStyle = "#38e8ff";
       ctx.lineWidth = 2;
-      ctx.strokeRect(W / 2 - 425, 227, 850, 99);
-      drawText(`<  ${modeDef.name}  >`, W / 2, 254, 31, "center", "#fff4b7");
-      drawText(modeDef.description, W / 2, 294, 20, "center", "#8ef7ff");
+      ctx.strokeRect(layout.mode.x, layout.mode.y, layout.mode.width, layout.mode.height);
+      drawText(`<  ${modeDef.name}  >`, W / 2, layout.mode.titleY, 31, "center", "#fff4b7");
+      drawText(modeDef.description, W / 2, layout.mode.descriptionY, 20, "center", "#8ef7ff");
       if (menu.selectedMode === "training") {
         drawText(`Q / E OR LB / RB: PRACTICE ${menu.trainingStage + 1} - ${stages[menu.trainingStage].short}`,
-          W / 2, 348, 20, "center", "#fff4b7");
+          W / 2, layout.trainingHintY, 18, "center", "#fff4b7");
       }
 
+      // The selected fighter uses the same reference center as the idle fighter.
+      // The layout's preview scale deliberately leaves >40 logical px after the mode box.
       const leftSelected = menu.selectedShip === 0;
-      drawShipPreview(ships[0], W / 2 - 255, 455, leftSelected ? 1.55 : 1.32, leftSelected);
-      drawShipPreview(ships[1], W / 2 + 255, 455, !leftSelected ? 1.55 : 1.32, !leftSelected);
+      drawShipPreview(ships[0], layout.preview.leftX, layout.preview.y,
+        leftSelected ? layout.preview.selectedScale : layout.preview.normalScale, leftSelected);
+      drawShipPreview(ships[1], layout.preview.rightX, layout.preview.y,
+        leftSelected ? layout.preview.normalScale : layout.preview.selectedScale, !leftSelected);
 
       const ship = selectedShip();
-      ctx.fillStyle = "rgba(0,0,0,.38)";
-      ctx.fillRect(W / 2 - 470, 720, 940, 110);
-      drawText(`${ship.name} / ${ship.subtitle}`, W / 2, 754, 28, "center", ship.accent);
-      drawText(ship.desc, W / 2, 794, 23, "center", "#e7fbff");
+      ctx.fillStyle = "rgba(0,0,0,.44)";
+      ctx.fillRect(layout.detail.x, layout.detail.y, layout.detail.width, layout.detail.height);
+      drawText(`${ship.name} / ${ship.subtitle}`, W / 2, layout.detail.titleY, 28, "center", ship.accent);
+      drawText(ship.desc, W / 2, layout.detail.descriptionY, 23, "center", "#e7fbff");
 
       const stat = ship.id === "falcon"
         ? "SPEED HIGH    HITBOX SMALL    HP 3/5"
         : "SPEED MEDIUM    ARMOR HIGH    HP 4/6";
-      drawText(stat, W / 2, 832, 20, "center", "rgba(231,251,255,.75)");
+      drawText(stat, W / 2, layout.detail.statsY, 20, "center", "rgba(231,251,255,.75)");
       if (menu.selectedMode !== "training") {
         drawText(`MODE BEST ${String(modeHighScore(menu.selectedMode)).padStart(6,"0")}`,
-          W / 2, 878, 21, "center", "#fff4b7");
+          W / 2, layout.detail.bestY, 21, "center", "#fff4b7");
       } else {
-        drawText("PRACTICE ONLY  /  NO SCORE RANKING", W / 2, 878, 21, "center", "#fff4b7");
+        drawText("PRACTICE ONLY  /  NO SCORE RANKING",
+          W / 2, layout.detail.bestY, 21, "center", "#fff4b7");
       }
     }
 

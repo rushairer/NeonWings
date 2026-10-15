@@ -12,6 +12,7 @@ const worlds = require("../src/worlds.js");
 const bossParts = require("../src/boss-parts.js");
 const modes = require("../src/modes.js");
 const records = require("../src/records.js");
+const selectLayout = require("../src/select-layout.js");
 const source = fs.readFileSync(path.join(__dirname, "../src/game.js"), "utf8");
 
 function makePad(index = 0) {
@@ -32,7 +33,7 @@ function boot(storage = new Map()) {
   const canvas = { style: {}, getContext: () => ({}) };
   const window = {
     innerWidth: 1280, innerHeight: 960,
-    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records,
+    NeonPlatform: platform, NeonController: controller, NeonCombat: combat, NeonCollision: collision, NeonEnemyBehaviors: enemyBehaviors, NeonWorlds: worlds, NeonBossParts: bossParts, NeonModes: modes, NeonRecords: records, NeonSelectLayout: selectLayout,
     addEventListener: (event, callback) => listeners.set(event, callback)
   };
   const document = {

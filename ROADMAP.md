@@ -46,6 +46,7 @@ Status is based on code shipped to `main`. Aspirational features are **not** des
 - [x] Training: selectable stage, ten-kill Boss drills, full-health equipment reset, unranked free play
 - [ ] Mission mode and tailored completion objectives
 - [x] Separate local Classic/Boss Rush top-five history, run grades (S/A/B/C) and eight persistent milestone badges; Training is unranked
+- [x] v26.1.1 selection-screen overlap regression: mode selector vs fighter highlight, including Training hint, both ships and footer
 - [ ] Daily seeded challenge; deterministic combat RNG separate from rendering; replay-compatible fixed-tick simulation still pending
 - [ ] Device/browser acceptance for mode menus and full five-Boss run
 
